@@ -133,7 +133,7 @@ final class PasswordBox: NSView {
         bump()
         switch keycode {
         case 36, 76:                                          // Return / Enter
-            if Config.shared.verify(buffer) { onSuccess?() }
+            if Settings.verify(buffer) { onSuccess?() }
             else { buffer = ""; dots.stringValue = ""; err.stringValue = "Wrong password"; err.isHidden = false }
         case 53:                                              // Esc
             isHidden = true

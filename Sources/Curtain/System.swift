@@ -81,6 +81,6 @@ enum System {
     /// too — it must use .readOnly (visible in the remote view). We identify them
     /// by serial because EDID passthrough makes vendor IDs identical.
     static func isDisplayLink(_ screen: NSScreen) -> Bool {
-        Config.shared.displayLinkSerials.contains(serial(of: screen))
+        Settings.displayLinkSerials.contains(serial(of: screen))
     }
 }

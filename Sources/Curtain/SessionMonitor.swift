@@ -32,11 +32,13 @@ final class SessionMonitor {
         if isVNCEstablished() {
             missCount = 0
             if !connected { connected = true; idleFired = false; onConnect?() }
-            if !idleFired, idleSeconds() >= Config.shared.idleMinutes * 60 {
-                idleFired = true
-                onIdleTimeout?()
-            } else if idleSeconds() < Config.shared.idleMinutes * 60 {
-                idleFired = false
+            if Settings.idleEnabled {
+                if !idleFired, idleSeconds() >= Settings.idleMinutes * 60 {
+                    idleFired = true
+                    onIdleTimeout?()
+                } else if idleSeconds() < Settings.idleMinutes * 60 {
+                    idleFired = false
+                }
             }
         } else if connected {
             missCount += 1

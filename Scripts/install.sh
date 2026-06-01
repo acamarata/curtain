@@ -18,6 +18,15 @@ echo "==> Installing $APP …"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Curtain"
+
+echo "==> Generating app icon…"
+ICONSET="$(mktemp -d)/Curtain.iconset"
+"$BIN" --render-icon "$ICONSET" || true
+if [ -d "$ICONSET" ]; then
+  iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns" 2>/dev/null || true
+  rm -rf "$ICONSET"
+fi
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -25,6 +34,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Curtain</string>
   <key>CFBundleIdentifier</key><string>io.acamarata.curtain</string>
   <key>CFBundleExecutable</key><string>Curtain</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0.0</string>
   <key>LSUIElement</key><true/>
