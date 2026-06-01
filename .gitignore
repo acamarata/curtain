@@ -1,0 +1,24 @@
+# Swift / SPM
+.build/
+.swiftpm/
+*.xcodeproj
+DerivedData/
+
+# macOS
+.DS_Store
+
+# AI working memory (gitignored)
+.claude/
+
+# Local secrets / config
+*.local
+.vscode/*
+.idea/
+.codex/
+.cursor/
+.aider/
+.aider.chat.history.md
+.continue/
+.windsurf/
+.gemini/
+.codeium/
