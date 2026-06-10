@@ -318,7 +318,7 @@ enum Settings {
     private static func legacySHA256(_ s: String, salt: String) -> String {
         var out = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
         let data = Array((salt + s).utf8)
-        data.withUnsafeBufferPointer { CC_SHA256($0.baseAddress, CC_LONG($0.count), &out) }
+        data.withUnsafeBufferPointer { _ = CC_SHA256($0.baseAddress, CC_LONG($0.count), &out) }
         return hex(out)
     }
 

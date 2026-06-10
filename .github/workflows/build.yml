@@ -5,8 +5,12 @@ on:
   pull_request:
 jobs:
   build:
-    runs-on: macos-14
+    # Needs a Swift 6 toolchain: the codebase relies on region-based isolation
+    # (weak-self captures inside @MainActor Tasks) that Swift 5.10 rejects.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Build (release)
         run: swift build -c release
+      - name: Test
+        run: swift test
