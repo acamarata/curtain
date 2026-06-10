@@ -12,35 +12,60 @@ enum System {
     // Accessibility and is unreliable from a launchd agent. SACLockScreenImmediate
     // (private login.framework symbol) locks immediately with no extra permission.
 
-    static func lockScreen() {
-        let paths = [
-            "/System/Library/PrivateFrameworks/login.framework/Versions/Current/login",
-            "/System/Library/PrivateFrameworks/login.framework/login"
-        ]
+    private static let loginPaths = [
+        "/System/Library/PrivateFrameworks/login.framework/Versions/Current/login",
+        "/System/Library/PrivateFrameworks/login.framework/login"
+    ]
+
+    /// Resolve the private lock symbol without calling it. Returns the function
+    /// pointer if found, nil otherwise. Both callers use this so probing and
+    /// locking stay in sync.
+    private static func resolveLockFn() -> (@convention(c) () -> Int32)? {
         typealias LockFn = @convention(c) () -> Int32
-        for p in paths {
+        for p in loginPaths {
             if let h = dlopen(p, RTLD_LAZY), let sym = dlsym(h, "SACLockScreenImmediate") {
-                _ = unsafeBitCast(sym, to: LockFn.self)()
-                return
+                return unsafeBitCast(sym, to: LockFn.self)
             }
         }
+        return nil
+    }
+
+    /// Call once at launch to surface a clear warning if the fast lock path is
+    /// missing on this OS build, before the user ever relies on it.
+    static func startupLockProbe() {
+        if resolveLockFn() == nil {
+            NSLog("Curtain: SACLockScreenImmediate unavailable — lock will fall back to osascript")
+        }
+    }
+
+    static func lockScreen() {
+        if let lock = resolveLockFn() {
+            _ = lock()
+            return
+        }
+        NSLog("Curtain: SACLockScreenImmediate could not be resolved on either login.framework path — falling back to osascript")
         // Fallback (needs Accessibility): the lock-screen shortcut.
         let t = Process()
-        t.launchPath = "/usr/bin/osascript"
+        t.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         t.arguments = ["-e", "tell application \"System Events\" to keystroke \"q\" using {command down, control down}"]
         try? t.run()
     }
 
     /// Put all displays to sleep (after a lock = a dark, locked Mac).
+    /// Runs off the main thread so a slow exec never stalls the UI.
     static func sleepDisplays() {
-        let t = Process(); t.launchPath = "/usr/bin/pmset"; t.arguments = ["displaysleepnow"]
-        try? t.run()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let t = Process()
+            t.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            t.arguments = ["displaysleepnow"]
+            try? t.run()
+        }
     }
 
     // MARK: - Prevent display sleep during a session
 
-    private static var assertionID: IOPMAssertionID = 0
-    private static var assertionActive = false
+    nonisolated(unsafe) private static var assertionID: IOPMAssertionID = 0
+    nonisolated(unsafe) private static var assertionActive = false
 
     static func preventDisplaySleep() {
         guard !assertionActive else { return }
@@ -58,15 +83,21 @@ enum System {
 
     // MARK: - End the active Screen Sharing session
     //
-    // Killing the connection processes needs root, so install.sh drops a tiny
-    // helper at /usr/local/bin/curtain-endsession with a NOPASSWD sudoers rule.
-    // launchd respawns the listener, so Screen Sharing stays available afterward.
+    // Killing the connection processes needs root. The disconnect feature is an
+    // optional privileged daemon installed separately (SMAppService.daemon). The
+    // daemon client sets disconnectHandler at launch; if nothing sets it, the
+    // disconnect is simply a no-op with a logged note. No sudo, no blocking.
+
+    /// Set by the daemon client when the privileged disconnect helper is enabled.
+    /// Invoked on a background queue so it never touches the main thread.
+    nonisolated(unsafe) static var disconnectHandler: (() -> Void)?
 
     static func endScreenShareSession() {
-        let helper = "/usr/local/bin/curtain-endsession"
-        guard FileManager.default.isExecutableFile(atPath: helper) else { return }
-        let t = Process(); t.launchPath = "/usr/bin/sudo"; t.arguments = ["-n", helper]
-        try? t.run(); t.waitUntilExit()
+        if let handler = disconnectHandler {
+            DispatchQueue.global(qos: .userInitiated).async { handler() }
+            return
+        }
+        NSLog("Curtain: disconnect requested but the remote-disconnect helper is not enabled")
     }
 
     // MARK: - Displays
@@ -76,11 +107,27 @@ enum System {
         return CGDisplaySerialNumber(id)
     }
 
+    /// Stable per-display UUID. Survives reboots and port changes better than the
+    /// serial, and unlike the serial it is unique even when EDID passthrough makes
+    /// vendor IDs identical. Returns nil if the display can't be resolved.
+    static func uuid(of screen: NSScreen) -> String? {
+        guard let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            return nil
+        }
+        guard let cfUUID = CGDisplayCreateUUIDFromDisplayID(num)?.takeRetainedValue() else {
+            return nil
+        }
+        return CFUUIDCreateString(nil, cfUUID) as String
+    }
+
     /// A native display can be hidden invisibly (sharingType .none). A DisplayLink
     /// display only exists via screen capture, so .none hides it from the capture
-    /// too — it must use .readOnly (visible in the remote view). We identify them
-    /// by serial because EDID passthrough makes vendor IDs identical.
+    /// too — it must use .readOnly (visible in the remote view). We match by UUID
+    /// now, falling back to the legacy serial list so older configs keep working.
     static func isDisplayLink(_ screen: NSScreen) -> Bool {
-        Settings.displayLinkSerials.contains(serial(of: screen))
+        if let id = uuid(of: screen) {
+            return Settings.displayLinkUUIDs.contains(id)
+        }
+        return Settings.legacyDisplayLinkSerials.contains(serial(of: screen))
     }
 }

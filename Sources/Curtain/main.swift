@@ -13,8 +13,26 @@ if CommandLine.arguments.contains("--render-icon"),
     exit(0)
 }
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.accessory)     // background agent; settings window still shows
-app.run()
+// The AppKit bootstrap is main-actor work; top-level code is nonisolated under Swift 6,
+// so run it inside an assumeIsolated block (process start is already on the main thread).
+// app.run() blocks here and never returns, so `delegate` and the signal source stay
+// retained on this stack. NSApplication.delegate is weak, so `delegate` must be held.
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.accessory)     // background agent; settings window still shows
+
+    // SIGTERM (launchd stop / `kill`): a C signal handler can't safely touch AppKit, so
+    // ignore the default action and route the signal through a DispatchSource on the main
+    // queue, where it can run cleanup before exiting.
+    signal(SIGTERM, SIG_IGN)
+    let sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+    sigtermSource.setEventHandler {
+        MainActor.assumeIsolated { delegate.cleanup() }
+        exit(0)
+    }
+    sigtermSource.resume()
+
+    app.run()
+}

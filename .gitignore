@@ -9,6 +9,7 @@ DerivedData/
 
 # AI working memory (gitignored)
 .claude/
+.opencode/
 
 # Local secrets / config
 *.local
@@ -22,3 +23,6 @@ DerivedData/
 .windsurf/
 .gemini/
 .codeium/
+
+# Release artifacts
+dist/

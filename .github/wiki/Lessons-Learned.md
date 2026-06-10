@@ -43,12 +43,20 @@ The first approach used `lsof -i :5900` to detect an active Screen Sharing conne
 The working approach:
 
 ```
-netstat -an | grep '.5900 ' | grep ESTABLISHED
+/usr/sbin/netstat -an | grep '.5900 ' | grep ESTABLISHED
 ```
 
 `netstat` does not filter by process owner and sees all connections.
 
 **Debounce disconnect:** a single missed netstat poll is not a real disconnect. Without debouncing, a transient network blip fires a false disconnect that kills a live session. The fix is to require three consecutive misses (~6 seconds at a 2-second poll interval) before treating it as a real disconnect.
+
+## Probe tool paths must be verified on-device
+
+`netstat` on macOS lives at `/usr/sbin/netstat`. There is no `/usr/bin/netstat`. A probe subprocess launched with the wrong absolute path fails silently: the process exits immediately with "no such file", the parser receives empty output, the probe returns zero results, and the detector never fires. No error surfaces anywhere unless the launch failure is logged explicitly.
+
+The lesson: when shelling out to a system tool, use its verified on-device path, not a guessed or Unix-conventional one. Verify with `which netstat` or `xcrun -f netstat` on the actual target hardware before writing the path in code. Probe helpers must log launch failures loudly (path, error code) so a misconfigured path is visible in Console.app immediately rather than silently producing no detections.
+
+This is the same class of bug as the `lsof` failure: a unit-tested parser that looked correct in isolation, fed by a subprocess that was silently dead.
 
 ## Screen lock
 
@@ -99,3 +107,38 @@ Do not re-attempt these:
 - **lsof for session detection.** Returns nothing for Screen Sharing sockets (wrong process owner).
 - **CGSession -suspend for lock.** Removed from macOS.
 - **caffeinate for display sleep prevention.** Orphaned PIDs kept displays awake after daemon reload.
+- **`/usr/bin/netstat`.** Does not exist on macOS. Use `/usr/sbin/netstat`.
+- **Three-mode cover scope (onlyMarked / allExceptMarked / all).** The "only marked" and "all except marked" modes were logically inverted in parts of the code, and the distinction confused settings. Replaced with a two-mode model: all displays, or per-display Cover toggles.
+
+## v1.0 hardening (2026-06-02)
+
+The v1.0 pass replaced or corrected several detection and distribution choices that did not survive contact with current macOS.
+
+### netstat:5900 was not a reliable session signal, and the probe path was wrong
+
+The `netstat | grep .5900 | grep ESTABLISHED` detector silently failed in two independent ways:
+
+1. On macOS Sequoia, high-performance Screen Sharing moved to a UDP transport. There is no `ESTABLISHED` TCP state to match and the detector saw nothing, so the curtain never activated.
+2. The probe helper was launched with the path `/usr/bin/netstat`, which does not exist on macOS. The real path is `/usr/sbin/netstat`. The launch failed silently every time. The unit-tested parser was correct, but the subprocess feeding it was dead. The ESTABLISHED-TCP activator was entirely non-functional until this was fixed.
+
+Both were silent failures. No error was logged, no signal reached the detector.
+
+The fixes: use `CGSessionScreenIsCaptured` as the primary signal (transport-independent, covers classic TCP and high-performance UDP); keep the TCP-ESTABLISHED and peered-UDP probes as secondary signals with the correct `/usr/sbin/netstat` path; and log every probe launch failure loudly so a path regression is visible immediately.
+
+### The event-source filter is convenience, not security
+
+The input split classifies events by `sourceStateID == 1` (physical HID). This is documented honestly as a convenience filter, not a security boundary. `sourceStateID` is spoofable by local code: a process running on the machine can inject events that claim any source ID. The filter is the right tool for keeping desk and remote input apart during normal use, but it is not a defense against a hostile local program, and the docs no longer imply otherwise.
+
+### Mid-session display hotplug left monitors uncovered
+
+There was no handler for `didChangeScreenParametersNotification`, so attaching a display during a session left that monitor showing the live desktop. v1.0 listens for that notification and reconciles the cover set on every change, applying the New-display policy (cover by default, fail-safe).
+
+Display identity also moved. `CGDisplaySerialNumber` returns 0 for many monitors, and returns the same value for two identical monitors, so it could not key per-display settings reliably. Identity now uses `CGDisplayCreateUUIDFromDisplayID`, which is stable and unique per monitor across reconnects and reboots.
+
+### Privileged disconnect moved off sudoers
+
+The old approach dropped a root helper at `/usr/local/bin/curtain-endsession` with a NOPASSWD sudoers rule. That is replaced by an optional `SMAppService.daemon` plus an XPC connection, off by default. The user opts in, approves the helper once in System Settings, and the disconnect runs through XPC instead of a shell-out to sudo. Nothing privileged is installed unless the feature is enabled.
+
+### Distribution: ad-hoc for v1.0, notarization next
+
+v1.0 ships ad-hoc signed. Gatekeeper requires a one-time quarantine strip after download before the app will launch. The ad-hoc build also cannot register the `SMAppService.daemon`, which is why disconnect-remote-on-end is unavailable until a notarized or Developer-ID build exists. Notarization is planned and will remove both the quarantine step and the daemon limitation.

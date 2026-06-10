@@ -1,35 +1,42 @@
 # Curtain
 
-Curtain is a privacy layer for macOS Screen Sharing. When you connect remotely to your Mac, it covers the physical displays so no one at the desk can see what you're doing, and it makes the desk keyboard and mouse inert. When the session ends or goes idle, it locks the Mac and sleeps the displays.
+A privacy curtain for macOS Screen Sharing. When you remote into your Mac, Curtain hides the screen from anyone sitting at it and makes the local keyboard and mouse do nothing to your apps, while you keep full control from your laptop. When the session goes idle or ends, it can lock the Mac and sleep the displays.
 
-It lives in the menu bar. It does one job.
+macOS does Screen Sharing well. Curtain is the missing privacy layer around it: a lightweight menu-bar agent with a SwiftUI settings window, in the spirit of Caffeine.
 
-## Behavior
+## Behavior at a glance
 
-| Event | What happens |
+| Event | Default (all configurable) |
 |---|---|
-| **Screen Sharing connects** | Every physical display goes black. Desk keyboard and mouse are blocked from reaching apps. Remote keyboard and mouse work normally. |
-| **Someone presses a key at the desk** | A password box appears over the curtain. |
-| **Correct password entered at the desk** | Curtain drops, remote session ends (you're asked to confirm). |
-| **Session idle for ~30 minutes** | Remote session is disconnected, Mac locks, displays sleep. |
-| **Remote operator disconnects** | Mac locks, displays sleep. |
+| Remote session connects | Cover every physical display. Block desk keyboard and mouse from reaching apps. Keep displays awake. Remote input works normally. |
+| Key pressed at the desk | A password box appears on the curtain. Correct password reveals the desktop and offers to disconnect the remote. |
+| Session idle (default 30 min, tracks remote activity by default) | Disconnect remote, lock Mac, turn off displays, deactivate curtain. |
+| Remote session disconnects | Lock Mac, turn off displays, deactivate curtain. |
 
-## Requirements
+## The key idea
 
-- macOS 13 (Ventura) or later. Built and used on macOS 26 / Apple Silicon.
-- Screen Sharing enabled: System Settings > General > Sharing > Screen Sharing.
-- Accessibility permission granted to Curtain (required for desk input blocking).
+Your laptop and the desk share one login session (standard Screen Sharing shares the console). A window that blocks input would block your remote too. Curtain detects sessions with three independent signals: a transport-independent macOS capture flag, an established TCP connection on port 5900, and a peered UDP socket on ports 5900-5902. It then filters input by **event source**: macOS tags real hardware events differently from injected remote events. Curtain blocks events with source ID `1` (physical hardware) and passes everything else. No virtual display, no second account.
+
+**Emergency unlock:** press **Control + Option + Command + U** at the desk to force-deactivate at any time. It works even without Accessibility granted.
 
 ## Pages
 
-- [Installation](Installation) — clone, run the install script, grant Accessibility, set a password.
-- [How It Works](How-It-Works) — plain-language explanation of the lifecycle and the physical-vs-remote input trick.
-- [Architecture](Architecture) — module breakdown, key APIs, and data flow.
-- [Lessons Learned](Lessons-Learned) — what was discovered building this, including things that did not work.
-- [Troubleshooting](Troubleshooting) — common issues and how to fix them.
+| Page | What it covers |
+|---|---|
+| [Installation](Installation) | Clone, `install.sh`, Accessibility grant, password setup, DisplayLink, uninstall |
+| [Settings](Settings) | Every option in the settings window explained |
+| [How It Works](How-It-Works) | Lifecycle walkthrough, the physical-vs-remote trick, DisplayLink caveat |
+| [Security](Security) | Threat model, input-filter limits, password storage, the optional helper, distribution trust |
+| [Architecture](Architecture) | 12-module breakdown, macOS APIs, data flow |
+| [Lessons Learned](Lessons-Learned) | What was discovered building this, including what did not work |
+| [Troubleshooting](Troubleshooting) | Common problems and fixes |
 
-## A note on DisplayLink monitors
+## Requirements
 
-DisplayLink displays exist only through screen capture. Because of how the curtain window hides itself from screen capture, those monitors cannot be hidden invisibly. On a DisplayLink monitor the curtain shows in your remote view too. Native (directly attached) displays are hidden from the desk while staying clear on your remote screen.
+- macOS 13 (Ventura) or later. Built and tested on macOS 26 / Apple Silicon.
+- Screen Sharing enabled: System Settings → General → Sharing → Screen Sharing.
+- Accessibility permission for Curtain, granted once after install.
 
-See [How It Works](How-It-Works#displaylink) for details.
+## License
+
+MIT © Aric Camarata

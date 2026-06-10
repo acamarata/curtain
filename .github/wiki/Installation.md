@@ -2,78 +2,78 @@
 
 ## Prerequisites
 
-- macOS 13 or later (Apple Silicon recommended).
-- Screen Sharing enabled in System Settings > General > Sharing > Screen Sharing.
-- Admin rights on the machine (the install script needs one sudo prompt).
+- macOS 13 (Ventura) or later. Apple Silicon recommended.
+- Screen Sharing enabled: System Settings → General → Sharing → Screen Sharing.
 
 ## Install
 
+1. Download `Curtain-1.0.0.dmg` from the [GitHub Releases page](https://github.com/acamarata/curtain/releases).
+2. Open the DMG.
+3. Drag `Curtain.app` into the `Applications` folder.
+4. Launch Curtain from `/Applications`.
+
+On first launch an onboarding flow walks you through setup: Welcome → grant Accessibility → optional disconnect helper → optional password → finish. When it completes, the curtains icon appears in the menu bar.
+
+## First launch: Gatekeeper
+
+Curtain is currently ad-hoc signed, not yet notarized. On a clean download macOS Gatekeeper blocks the first launch and reports the app is damaged or from an unidentified developer. This is expected for now.
+
+Clear the quarantine flag once, then open the app normally:
+
 ```bash
-git clone https://github.com/acamarata/curtain.git
-cd curtain
-./Scripts/install.sh
+xattr -dr com.apple.quarantine /Applications/Curtain.app
 ```
 
-The script does the following in one go:
-
-| What it sets up | Where | Why |
-|---|---|---|
-| `Curtain.app` bundle | `/Applications/Curtain.app` | Ad-hoc codesigns the bundle so TCC (Accessibility) grants a stable identity. |
-| Login LaunchAgent | `~/Library/LaunchAgents/com.acamarata.curtain.plist` | Starts Curtain automatically when you log in. |
-| Root helper | `/usr/local/bin/curtain-endsession` | Lets Curtain kill the Screen Sharing connection (owned by root) without a password prompt. |
-| Sudoers rule | `/etc/sudoers.d/curtain-endsession` | NOPASSWD for the helper only. Requires one admin prompt during install. |
-
-After the script finishes, Curtain starts automatically and a 👁 icon appears in the menu bar.
+Then double-click `Curtain.app`. Right-clicking and choosing Open is no longer enough on recent macOS, so use the command above. Once a notarized build ships, this step goes away and Curtain opens straight from the DMG.
 
 ## Grant Accessibility
 
-Curtain needs Accessibility permission to block physical keyboard and mouse input. Without it the curtain still covers the screen, but desk input reaches your apps.
+Curtain needs Accessibility permission to block the desk keyboard and mouse. Without it, Curtain refuses to show the cover at all and posts a notification instead. This prevents putting up a screen that cannot be unlocked. The emergency hotkey **Control + Option + Command + U** always works regardless.
 
-1. Open **System Settings > Privacy & Security > Accessibility**.
+The onboarding flow deep-links you straight to the right pane. You can also open it yourself:
+
+1. Open **System Settings → Privacy & Security → Accessibility**.
 2. Find **Curtain** in the list and turn it on.
-3. Relaunch Curtain: `launchctl kickstart -k gui/$(id -u)/com.acamarata.curtain`
+3. Relaunch Curtain so the new permission takes effect.
 
-If Curtain does not appear in the Accessibility list, run:
+If Curtain does not appear in the Accessibility list, launch it once from `/Applications`, then check again.
 
-```bash
-open -a Curtain
-```
+After every rebuild of a local ad-hoc build, re-grant Accessibility. Rebuilding produces a new code signature and macOS does not carry over the old grant automatically.
 
-Then check again.
+## Open at login
+
+Curtain manages login startup itself with SMAppService. Turn on **Open at login** in the settings window. macOS tracks this under **System Settings → General → Login Items**, where you can also toggle it off. There is no LaunchAgent and no plist to manage by hand.
 
 ## Set a password
 
-From the menu-bar icon, choose **Set Password…** and type the password you want to use at the desk to end a remote session.
+Open the settings window (click the menu-bar icon) and type a password in the **Security** section. This is what someone at the desk types to get past the curtain.
 
-If you never set a password, the default is `curtain`.
+If you never set a password, the default is `curtain`. The password is stored as a salted PBKDF2-HMAC-SHA256 hash in UserDefaults. The plaintext is never saved.
 
-Passwords are stored as a salted SHA-256 hash in `~/Library/Application Support/Curtain/config.json`. The plaintext is never saved.
+## Disconnect helper (optional)
 
-## Mark DisplayLink monitors (if you use them)
+The optional "disconnect the remote session" feature is off by default. When you enable it (in settings or during onboarding), Curtain registers a privileged helper through SMAppService and asks for one approval in System Settings. There is no sudoers rule.
 
-If you have any DisplayLink USB monitors, choose **Mark Current Externals as DisplayLink** from the menu. This tells Curtain to use a different cover mode for those displays.
+Under the current ad-hoc build, this helper may fail to register. The privileged-helper path needs a notarized or Developer ID signed build to install cleanly. Until then, leave the feature off or expect the registration to be rejected.
 
-To see which display is which first, choose **Identify Displays** — each monitor flashes its index number and serial for six seconds.
+## Mark DisplayLink monitors (if you have them)
 
-See [How It Works — DisplayLink](How-It-Works#displaylink) for why this matters.
+If any external monitor is DisplayLink, open **Settings → Displays** and mark it as DisplayLink. This tells Curtain to use a capturable cover mode for that display.
+
+Displays are identified by a stable UUID, so the marking survives reboots and reconnects. Detection works with both classic and high-performance Screen Sharing.
+
+See [How It Works](How-It-Works#displaylink) for why this matters.
+
+## Confirm Curtain is running
+
+```bash
+pgrep -fl Curtain
+```
+
+You can also open Activity Monitor and search for Curtain.
 
 ## Uninstall
 
-```bash
-./Scripts/uninstall.sh
-```
+Quit Curtain, then drag `Curtain.app` from `/Applications` to the Trash.
 
-This removes the app bundle, LaunchAgent, helper binary, and sudoers rule.
-
-## Manual LaunchAgent management
-
-```bash
-# Stop
-launchctl unload ~/Library/LaunchAgents/com.acamarata.curtain.plist
-
-# Start
-launchctl load ~/Library/LaunchAgents/com.acamarata.curtain.plist
-
-# Restart
-launchctl kickstart -k gui/$(id -u)/com.acamarata.curtain
-```
+If you had an older script-based install on this machine, `Scripts/uninstall.sh` in the repo cleans up any legacy LaunchAgent, helper binary, or sudoers rule left behind.
