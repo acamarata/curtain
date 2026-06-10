@@ -9,7 +9,7 @@ jobs:
     # (weak-self captures inside @MainActor Tasks) that Swift 5.10 rejects.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build (release)
         run: swift build -c release
       - name: Test
