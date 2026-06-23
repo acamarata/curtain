@@ -147,7 +147,7 @@ codesign --force --options runtime --timestamp \
 #   2. Uncomment the submit + staple lines below. notarytool needs a stored
 #      keychain profile created once with:
 #        xcrun notarytool store-credentials curtain-notary \
-#          --apple-id "alisalaah@gmail.com" --team-id "TEAMID" --password "<app-specific-pw>"
+#          --apple-id "you@example.com" --team-id "TEAMID" --password "<app-specific-pw>"
 #
 # NOTARY_PROFILE="curtain-notary"
 # NOTARIZE_ZIP="$DIST/Curtain-$VERSION-notarize.zip"

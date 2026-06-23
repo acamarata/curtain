@@ -6,46 +6,49 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-10
+
+First public release. Curtain is a menu-bar app for the host side of macOS
+Screen Sharing: when a remote session is active it covers every display and
+blocks physical input at the desk, so the screen you control remotely stays
+private from anyone sitting in front of the Mac.
+
 ### Added
-- Three-signal session detection: the `CGSSessionScreenIsCaptured` capture key
-  (primary, transport-independent), an ESTABLISHED inbound TCP connection on
-  port 5900 (standard Screen Sharing), and a peered UDP socket on 5900-5902
-  (High-Performance Screen Sharing).
-- Diagnostic probe (`Scripts/probe-detection.swift`) that reports every raw
+- Cover all displays and block desk keyboard and mouse while a remote Screen
+  Sharing session is active, after an optional connect grace delay.
+- Session detection on three independent signals: the `CGSSessionScreenIsCaptured`
+  capture key (primary, transport-independent), an ESTABLISHED inbound TCP
+  connection on port 5900 (standard Screen Sharing), and a peered UDP socket on
+  5900-5902 (High-Performance Screen Sharing). Process presence and idle listen
+  sockets never trigger activation, so an enabled-but-idle Mac is never covered.
+- Desk password to reveal the screen, with a built-in `curtain` fallback so the
+  Mac is never permanently locked. Password is stored as a salted
+  PBKDF2-HMAC-SHA256 hash with attempt backoff.
+- Idle actions: when the remote operator goes idle for a configurable time, run
+  any of disconnect, lock, displays off, deactivate.
+- End-of-session actions: when the remote session ends, run any of lock,
+  displays off, deactivate.
+- Cover styles: solid color, message, blur, logo, and an aerial video that
+  shares one decoder across all displays. Optional clock overlay.
+- Per-display cover control: choose all displays or per-display toggles, mark
+  DisplayLink monitors, and place the password box on a specific display.
+- Optional privileged helper to disconnect the remote session, off by default
+  and installed only on explicit opt-in.
+- Open at login via `SMAppService`, optional menu-bar item, and a first-run
+  onboarding flow.
+- Emergency escape: Control + Option + Command + U force-deactivates the curtain
+  without Accessibility. When Accessibility is not granted, Curtain refuses to
+  cover rather than putting up a screen it cannot unlock.
+- Diagnostic probe (`Scripts/probe-detection.swift`) that prints every raw
   detection signal once per second and diffs the full CGSession dictionary.
-- Per-signal diagnostic logging on every detection transition.
-- Password box placement on a specific display, chosen from a picker of
-  connected displays.
-- Activation notification: a real notification banner when the curtain rises.
-- Emergency escape: Control + Option + Command + U force-deactivates without
-  Accessibility.
 
-### Changed
-- Idle detection honors its source setting; the default is now remote session
-  activity, so the idle timer tracks the remote operator rather than the desk.
-- Cover scope is a two-mode model: all displays (default) or per-display Cover
-  toggles. Legacy scope values migrate automatically.
-- The aerial cover style shares one video decoder across all displays.
-- "Refuse to arm" (Accessibility missing) is enforced at the master switch.
-- Release script: signing failures abort the build; the bundle version number
-  increases monotonically with the repository history.
-
-### Fixed
-- Session detection: the network probe pointed at a nonexistent netstat path,
-  which silently disabled the TCP activator.
-- The per-display Cover toggle had no effect in the default scope and inverted
-  meaning in one legacy scope.
-- A curtain preview test could drop the cover of a live session after the
-  preview delay.
-- The desk password buffer is zeroed on successful unlock and on dismissal.
-- A stale aerial playability check could tear down a rebuilt video player.
-- The menu deactivate no longer refuses when the input tap is unavailable and
-  the on-cover password box cannot receive keys.
-
-## [1.0.0] — unreleased (pending live verification and notarization)
-
-Initial release: menu-bar privacy curtain for macOS Screen Sharing hosts.
-Covers all displays and blocks physical input during an inbound session;
-desk password reveal; idle and end-of-session actions (disconnect, lock,
-displays off, deactivate); configurable cover styles; optional privileged
-disconnect helper; open-at-login.
+### Known limitations
+- Ad-hoc signed, not notarized. macOS Gatekeeper warns on first launch; clear
+  the quarantine flag once with
+  `xattr -dr com.apple.quarantine /Applications/Curtain.app`.
+- The capture-key and High-Performance UDP detection paths are verified by unit
+  tests and on-device probes but not yet against a second physical Mac. Standard
+  (TCP) Screen Sharing detection is verified end-to-end.
+- The physical-versus-remote input split is a convenience filter, not a security
+  boundary. Curtain hides your screen from someone at the desk; it is not a
+  defense against local malware.
