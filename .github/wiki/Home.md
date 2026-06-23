@@ -23,13 +23,13 @@ Your laptop and the desk share one login session (standard Screen Sharing shares
 
 | Page | What it covers |
 |---|---|
-| [Installation](Installation.md) | Clone, `install.sh`, Accessibility grant, password setup, DisplayLink, uninstall |
-| [Settings](Settings.md) | Every option in the settings window explained |
-| [How It Works](How-It-Works.md) | Lifecycle walkthrough, the physical-vs-remote trick, DisplayLink caveat |
-| [Security](Security.md) | Threat model, input-filter limits, password storage, the optional helper, distribution trust |
-| [Architecture](Architecture.md) | 12-module breakdown, macOS APIs, data flow |
-| [Lessons Learned](Lessons-Learned.md) | What was discovered building this, including what did not work |
-| [Troubleshooting](Troubleshooting.md) | Common problems and fixes |
+| [Installation](Installation) | Clone, `install.sh`, Accessibility grant, password setup, DisplayLink, uninstall |
+| [Settings](Settings) | Every option in the settings window explained |
+| [How It Works](How-It-Works) | Lifecycle walkthrough, the physical-vs-remote trick, DisplayLink caveat |
+| [Security](Security) | Threat model, input-filter limits, password storage, the optional helper, distribution trust |
+| [Architecture](Architecture) | 12-module breakdown, macOS APIs, data flow |
+| [Lessons Learned](Lessons-Learned) | What was discovered building this, including what did not work |
+| [Troubleshooting](Troubleshooting) | Common problems and fixes |
 
 ## Requirements
 

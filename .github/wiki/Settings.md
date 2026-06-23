@@ -213,7 +213,7 @@ If no password has been set, the default password `curtain` is accepted. The win
 
 Lets Curtain end the remote session for the idle and session-end actions. This is **off by default** because it needs elevated rights.
 
-Turning it on installs a privileged helper. On a notarized or Developer-ID-signed build, Curtain registers a daemon through `SMAppService.daemon`, which prompts for one approval in System Settings. On a local ad-hoc or dev build, Curtain falls back to a small privileged helper installed with one admin prompt, scoped to the current user. A public notarized build never installs a sudoers rule. The helper performs the disconnect; macOS respawns the listener so new connections stay possible. See [How It Works](How-It-Works.md).
+Turning it on installs a privileged helper. On a notarized or Developer-ID-signed build, Curtain registers a daemon through `SMAppService.daemon`, which prompts for one approval in System Settings. On a local ad-hoc or dev build, Curtain falls back to a small privileged helper installed with one admin prompt, scoped to the current user. A public notarized build never installs a sudoers rule. The helper performs the disconnect; macOS respawns the listener so new connections stay possible. See [How It Works](How-It-Works).
 
 Default: **off**.
 
