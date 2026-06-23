@@ -4,7 +4,7 @@
 
 When you use macOS Screen Sharing, your laptop and the physical Mac share one login session. There is no separate "remote session" at the OS level. It is the same desktop, the same running apps, the same input system.
 
-That creates a real problem: you cannot put up a window that blocks input from the desk, because that would also block your remote input. And you cannot put up a click-through window (one that ignores the desk), because then desk keyboard and mouse still reach your apps. Several approaches hit this wall. See [Lessons Learned](Lessons-Learned) for the full list.
+That creates a real problem: you cannot put up a window that blocks input from the desk, because that would also block your remote input. And you cannot put up a click-through window (one that ignores the desk), because then desk keyboard and mouse still reach your apps. Several approaches hit this wall. See [Lessons Learned](Lessons-Learned.md) for the full list.
 
 The solution is to work below the window system. Curtain inspects every input event before any app sees it, and classifies each one by where it came from.
 

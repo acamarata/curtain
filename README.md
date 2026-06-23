@@ -41,7 +41,7 @@ shasum -a 256 Curtain-1.0.0.dmg
 
 ## Settings
 
-Everything is a setting. Open the window from the menu-bar curtains icon or by reopening `Curtain.app`. Changes take effect immediately. You control arming, what the desk sees (solid color, message, blur, lock logo, Curtain logo, or aerial video), the reveal trigger, the idle and disconnect actions, the idle source (remote session activity or physical HID), the password and idle timeout, what happens to the remote session on unlock, per-display cover scope, password-box placement, and DisplayLink marking. See the [Settings](../../wiki/Settings) page for the full reference.
+Everything is a setting. Open the window from the menu-bar curtains icon or by reopening `Curtain.app`. Changes take effect immediately. You control arming, what the desk sees (solid color, message, blur, lock logo, Curtain logo, or aerial video), the reveal trigger, the idle and disconnect actions, the idle source (remote session activity or physical HID), the password and idle timeout, what happens to the remote session on unlock, per-display cover scope, password-box placement, and DisplayLink marking. See the [Settings](.github/wiki/Settings.md) page for the full reference.
 
 ## Multi-display note
 
@@ -56,7 +56,7 @@ Curtain covers every physical display. The Apple Screen Sharing app shows one ho
 
 ## Documentation
 
-The [wiki](../../wiki) covers everything in depth: [Installation](../../wiki/Installation), [Settings](../../wiki/Settings), [How It Works](../../wiki/How-It-Works), [Architecture](../../wiki/Architecture), [Security](../../wiki/Security), [Lessons Learned](../../wiki/Lessons-Learned), and [Troubleshooting](../../wiki/Troubleshooting).
+The [documentation](.github/wiki/Home.md) covers everything in depth: [Installation](.github/wiki/Installation.md), [Settings](.github/wiki/Settings.md), [How It Works](.github/wiki/How-It-Works.md), [Architecture](.github/wiki/Architecture.md), [Security](.github/wiki/Security.md), [Lessons Learned](.github/wiki/Lessons-Learned.md), and [Troubleshooting](.github/wiki/Troubleshooting.md).
 
 ## License
 
