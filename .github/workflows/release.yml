@@ -12,7 +12,7 @@ jobs:
     # timeout is more than sufficient and is intentionally left untightened.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run release pipeline
         # Scripts/release.sh is env-var-gated (T-P1-E02-01): with these unset it
         # produces an ad-hoc/unnotarized build and a loud warning instead of

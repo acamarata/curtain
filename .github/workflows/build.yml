@@ -9,7 +9,7 @@ jobs:
     # (weak-self captures inside @MainActor Tasks) that Swift 5.10 rejects.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache SPM build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -30,7 +30,7 @@ jobs:
     # swift-format's 2-space/100-col defaults.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Lint (swift-format)
         run: swift format lint --configuration .swift-format --recursive --strict Sources/ Tests/
 
@@ -42,7 +42,7 @@ jobs:
     # CODECOV_TOKEN_CURTAIN exists (out of scope here).
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache SPM build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
