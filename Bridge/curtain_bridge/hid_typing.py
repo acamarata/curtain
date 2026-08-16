@@ -53,7 +53,12 @@ import time
 from typing import TYPE_CHECKING, Protocol
 
 from curtain_bridge.detection import DetectionState
-from curtain_bridge.hid_keymap import RELOCK_KEYSTROKE, keystroke_for_char
+from curtain_bridge.hid_keymap import (
+    RELOCK_KEYSTROKE,
+    Keystroke,
+    UnsupportedCharacterError,
+    keystroke_for_char,
+)
 
 if TYPE_CHECKING:
     from curtain_bridge.telegram_client import TelegramClient
@@ -97,12 +102,41 @@ _BUSY_MESSAGE = (
     "An unlock attempt is already in progress — wait for it to finish "
     "before replying again."
 )
+# Fallback message for a genuine HID/network injection failure during typing
+# (i.e. NOT an unmappable character -- that case is reported via
+# _unsupported_character_message() below, which names the exact position).
 _UNSUPPORTED_CHARACTER_MESSAGE = (
     "Unlock failed: the password contains a character that cannot be typed "
     "via HID injection on a US keyboard layout. No characters were "
     "retried or guessed — reply with the password again (or a corrected "
     "one) to try again."
 )
+
+
+class _UnsupportedCharacterAtPosition(Exception):
+    """Purpose: carries the 1-indexed position of the first password character
+    with no US-QWERTY HID mapping, WITHOUT ever carrying the character's
+    actual value (that invariant is inherited from UnsupportedCharacterError,
+    see hid_keymap.py's docstring on why the value itself is never surfaced).
+    """
+
+    def __init__(self, position: int) -> None:
+        self.position = position
+        super().__init__(f"unsupported character at password position {position}")
+
+
+def _unsupported_character_message(position: int) -> str:
+    """Purpose: build the human-facing failure message for an unmappable
+    password character, naming its 1-indexed position so someone remotely
+    recovering their own machine can diagnose without already knowing their
+    password's exact character set. Inputs: position. Outputs: message str."""
+    return (
+        f"Unlock failed: the character at position {position} of your password "
+        "cannot be typed via HID injection on a US-QWERTY keyboard layout "
+        "(e.g. an accented letter, curly quote, em dash, or a symbol only "
+        "reachable on a non-US layout). No characters were typed. Reply with "
+        "a corrected password to try again."
+    )
 
 
 class DetectionPoller(Protocol):
@@ -253,10 +287,17 @@ class HidUnlockModule:
         try:
             try:
                 await self._type_password_once(password)
+            except _UnsupportedCharacterAtPosition as exc:
+                logger.exception(
+                    "hid_unlock: unsupported character at password position %d -- "
+                    "stopping, no retry",
+                    exc.position,
+                )
+                await self._send_message(_unsupported_character_message(exc.position))
+                return
             except Exception:
                 logger.exception(
-                    "hid_unlock: unsupported character or HID injection "
-                    "failure during typing -- stopping, no retry"
+                    "hid_unlock: HID injection failure during typing -- stopping, no retry"
                 )
                 await self._send_message(_UNSUPPORTED_CHARACTER_MESSAGE)
                 return
@@ -285,10 +326,22 @@ class HidUnlockModule:
                      `UnsupportedCharacterError`, which deliberately omits
                      the character value), and stops discarding references
                      the moment the loop ends -- there is no `password`
-                     variable retained on `self` at any point.
+                     variable retained on `self` at any point. The ENTIRE
+                     password is resolved against the keymap first, with
+                     zero send_keystroke calls made, before any character is
+                     typed -- if any character lacks a mapping, this raises
+                     `_UnsupportedCharacterAtPosition` with zero side effects
+                     rather than leaving a partial/wrong string already typed
+                     into the target Mac's password field.
         """
-        for char in password:
-            keystroke = keystroke_for_char(char)
+        keystrokes: list[Keystroke] = []
+        for position, char in enumerate(password, start=1):
+            try:
+                keystrokes.append(keystroke_for_char(char))
+            except UnsupportedCharacterError:
+                raise _UnsupportedCharacterAtPosition(position) from None
+
+        for keystroke in keystrokes:
             await asyncio.to_thread(self._tinypilot.send_keystroke, **keystroke.as_kwargs())
         logger.info(
             "hid_unlock: typed password (%d characters), value discarded", len(password)

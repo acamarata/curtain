@@ -204,6 +204,12 @@ def _best_match_score(frame_bgr: np.ndarray, template_bgr: np.ndarray) -> float:
                  resolution), returns 0.0 rather than letting cv2 raise --
                  this is a real, if unlikely, condition worth degrading
                  gracefully on rather than crashing the polling loop over.
+                 A near-zero-variance frame (e.g. solid black/gray right
+                 after an HDMI lock) can make TM_CCOEFF_NORMED's
+                 near-zero-denominator normalization produce NaN entries in
+                 `result`; those are sanitized to -1.0 (this metric's
+                 documented minimum) before minMaxLoc so a NaN can never win
+                 the max and corrupt the frame's classification.
     """
     frame_h, frame_w = frame_bgr.shape[:2]
     tmpl_h, tmpl_w = template_bgr.shape[:2]
@@ -217,6 +223,7 @@ def _best_match_score(frame_bgr: np.ndarray, template_bgr: np.ndarray) -> float:
         )
         return 0.0
     result = cv2.matchTemplate(frame_bgr, template_bgr, cv2.TM_CCOEFF_NORMED)
+    result = np.nan_to_num(result, nan=-1.0, posinf=1.0, neginf=-1.0)
     _min_val, max_val, _min_loc, _max_loc = cv2.minMaxLoc(result)
     return float(max_val)
 

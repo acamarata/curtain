@@ -36,6 +36,15 @@ Constraints: ARCHITECTURAL DECISION (T-P1-E12-04, decided on the Mac side,
              path verbatim. Binds to a THIRD distinct local port (not
              TinyPilot's 80, not health.py's 8642) -- see
              DEFAULT_CRASH_RELAY_PORT below.
+
+             SECURITY (auth follow-up): binding to 0.0.0.0 means any host on
+             the same LAN can otherwise POST an arbitrary summary that gets
+             relayed verbatim into the SAME trusted Telegram chat the
+             FileVault-unlock password-reply flow uses -- see `auth.py`'s
+             doc comment for the full attack framing. `do_POST` therefore
+             calls `require_auth` as the very FIRST statement, before even
+             reading `Content-Length`, so an unauthorized caller's body is
+             never buffered or parsed.
 SPORT: MASTER-APPS (Bridge/ deployment artifact, T-P1-E12-04)
 """
 
@@ -47,6 +56,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from typing import TYPE_CHECKING, Callable
+
+from curtain_bridge.auth import load_bridge_auth_token, require_auth
 
 if TYPE_CHECKING:
     from curtain_bridge.telegram_client import TelegramClient
@@ -81,6 +92,14 @@ class _CrashRelayRequestHandler(BaseHTTPRequestHandler):
     server_version = "curtain-bridge-crash-relay/1.0"
 
     def do_POST(self) -> None:  # noqa: N802 (stdlib-mandated method name)
+        # Auth check is the FIRST thing this handler does -- before path
+        # routing, before Content-Length, before any body read -- so an
+        # unauthorized request never causes this process to buffer or parse
+        # anything it submitted. `require_auth` writes the 401 itself.
+        expected_token: str | None = self.server.auth_token  # type: ignore[attr-defined]
+        if not require_auth(self, expected_token):
+            return
+
         if self.path != "/crash-report":
             self._respond(404, {"status": "not_found"})
             return
@@ -134,18 +153,24 @@ class _CrashRelayRequestHandler(BaseHTTPRequestHandler):
 
 
 class _CrashRelayHTTPServer(ThreadingMixIn, HTTPServer):
-    """Purpose: HTTPServer variant carrying the injected TelegramClient +
-    chat_id accessor for the handler above to read. Mirrors
+    """Purpose: HTTPServer variant carrying the injected TelegramClient,
+    chat_id accessor, and auth token for the handler above to read. Mirrors
     _HealthHTTPServer's constructor-injection shape."""
 
     daemon_threads = True
 
     def __init__(
-        self, *args: object, client: "TelegramClient", get_chat_id: Callable[[], int | None], **kwargs: object
+        self,
+        *args: object,
+        client: "TelegramClient",
+        get_chat_id: Callable[[], int | None],
+        auth_token: str | None,
+        **kwargs: object,
     ) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self.client = client
         self.get_chat_id = get_chat_id
+        self.auth_token = auth_token
 
 
 class CrashRelayModule:
@@ -176,11 +201,24 @@ class CrashRelayModule:
         # `config` is a service.BridgeConfig; typed as object here to avoid a
         # circular import, matching HealthModule.start's existing pattern.
         port = int(getattr(config, "extra", {}).get("crash_relay_port", DEFAULT_CRASH_RELAY_PORT))  # type: ignore[union-attr]
+        # Auth token path is overridable via config.extra, matching the
+        # port's own override shape -- primarily so tests can point at a
+        # throwaway fixture file instead of the real /etc path.
+        token_path = getattr(config, "extra", {}).get(  # type: ignore[union-attr]
+            "bridge_auth_token_path", None
+        )
+        auth_token = load_bridge_auth_token(token_path) if token_path else load_bridge_auth_token()
+        if auth_token is None:
+            logger.warning(
+                "crash_relay: no Bridge auth token provisioned yet -- ALL requests will be "
+                "rejected with 401 until the setup wizard delivers one"
+            )
         self._server = _CrashRelayHTTPServer(
             ("0.0.0.0", port),
             _CrashRelayRequestHandler,
             client=self._client,
             get_chat_id=self._get_chat_id,
+            auth_token=auth_token,
         )
         self._thread = threading.Thread(
             target=self._server.serve_forever,

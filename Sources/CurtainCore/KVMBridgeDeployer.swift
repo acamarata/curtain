@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import CurtainShared
 
 /// Purpose: Deploys, verifies, and updates T-P1-E11-01's `curtain-bridge` Python
@@ -148,6 +149,18 @@ public enum KVMBridgeDeployer {
         case requestFailed(description: String)
         case unexpectedStatusCode(Int)
         case decodingFailed(description: String)
+        /// No `Settings.kvmBridgeAuthToken` is stored yet — e.g. an already-
+        /// deployed Bridge from before the shared-secret auth fix, whose
+        /// wizard hasn't been re-run since. Kept distinct from
+        /// `requestFailed`/`unexpectedStatusCode` deliberately: without this
+        /// case, a missing token would send no `Authorization` header at all,
+        /// the Bridge would 401, and the caller would only ever see a bare
+        /// `unexpectedStatusCode(401)` — indistinguishable from a genuinely
+        /// wrong/expired token, or (before this fix existed) an unrelated
+        /// server error. Surfacing the "you have never sent a token" case by
+        /// its own name lets the UI point the user straight at "re-run the
+        /// setup wizard" instead of a generic network failure message.
+        case noBridgeAuthToken
     }
 
     /// Outcome of an update attempt driven through `performUpdateIfNeeded`,
@@ -185,9 +198,15 @@ public enum KVMBridgeDeployer {
     /// per this ticket's guide, or an in-process stub) without any change to
     /// production code. Production installs the real `URLSession.shared`
     /// data-task call; tests swap this static var directly.
-    static var healthURLSession: (URL) async -> (data: Data?, response: URLResponse?, error: Error?) = { url in
-        var request = URLRequest(url: url)
-        request.timeoutInterval = healthCheckTimeout
+    ///
+    /// Takes the fully-built `URLRequest` (not a bare `URL`) so callers can
+    /// set headers — specifically the `Authorization: Bearer <token>` header
+    /// `checkHealth` now attaches (see this type's security follow-up: the
+    /// Bridge's /health endpoint requires the shared-secret bearer token,
+    /// same as /crash-report) — and tests can assert on exactly what was
+    /// sent, not just where.
+    static var healthURLSession: (URLRequest) async -> (data: Data?, response: URLResponse?, error: Error?) = {
+        request in
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             return (data, response, nil)
@@ -310,7 +329,18 @@ public enum KVMBridgeDeployer {
         guard let url = URL(string: "http://\(host):\(healthPort)/health") else {
             return .failure(.invalidURL)
         }
-        let (data, response, error) = await healthURLSession(url)
+        // Fail with a distinct, clear error BEFORE issuing any request when
+        // no token has ever been provisioned — never send a bare/missing
+        // header and let the Bridge's resulting 401 surface as an opaque
+        // unexpectedStatusCode. See HealthCheckError.noBridgeAuthToken's doc
+        // comment for why this is its own case.
+        guard let token = Settings.kvmBridgeAuthToken else {
+            return .failure(.noBridgeAuthToken)
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = healthCheckTimeout
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response, error) = await healthURLSession(request)
         if let error {
             return .failure(.requestFailed(description: "\(error)"))
         }
@@ -432,6 +462,51 @@ public enum KVMBridgeDeployer {
         let outcome = processRunnerStdin("/usr/bin/ssh", args, tokenData, nil)
         guard outcome.succeeded else {
             return .failure(.sshFailed(step: "send-telegram-token", exitCode: outcome.exitCode, stderr: outcome.output))
+        }
+        return .success(())
+    }
+
+    // MARK: - Bridge auth token generation + relay (security follow-up)
+
+    /// Generates a fresh, cryptographically strong shared-secret bearer token
+    /// for the Bridge's `/health` and `/crash-report` endpoints. Uses
+    /// `SecRandomCopyBytes` (the CSPRNG backing Security.framework, the same
+    /// primitive Keychain/TLS machinery on this platform relies on) over 32
+    /// bytes (256 bits) — deliberately NOT `UUID()`, which is not designed or
+    /// guaranteed as a security token (RFC 4122 v4 UUIDs only reserve 122
+    /// bits of the 128 for randomness, and neither the API contract nor most
+    /// implementations promise a CSPRNG source). Hex-encoded rather than
+    /// base64 so the token is trivially safe to embed in an `Authorization:
+    /// Bearer <token>` header and a shell-piped file write with zero
+    /// escaping concerns (no `/`, `+`, or `=` characters to worry about).
+    public static func generateBridgeAuthToken() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        precondition(status == errSecSuccess, "SecRandomCopyBytes failed with status \(status)")
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Writes `token` to the Bridge's auth-token file location on the Pi,
+    /// mirroring `sendTelegramToken` exactly: stdin-piped to a remote `cat >
+    /// path`, never interpolated into a shell command string or passed as a
+    /// `ps`-visible argv element. Unlike the Telegram token, THIS token IS
+    /// also persisted on the Mac side afterward (by the caller, via
+    /// `Settings.kvmBridgeAuthToken` — see that key's doc comment for why
+    /// this is a different, lower risk tier than the Telegram bot token)
+    /// once this call reports success; this function itself still never
+    /// writes to Mac-side storage, matching every other SSH-relay function
+    /// in this type.
+    public static func sendBridgeAuthToken(target: Target, token: String) -> Result<Void, DeployError> {
+        guard target.trustHostKey else { return .failure(.hostKeyNotTrusted) }
+        guard let tokenData = token.data(using: .utf8) else {
+            return .failure(.sshFailed(step: "encode-bridge-auth-token", exitCode: -1, stderr: "non-UTF8 token"))
+        }
+        let remoteCommand = "cat > /etc/curtain-bridge/auth-token"
+        let args = sshOptionArgs(target: target) + ["\(target.user)@\(target.host)", remoteCommand]
+        let outcome = processRunnerStdin("/usr/bin/ssh", args, tokenData, nil)
+        guard outcome.succeeded else {
+            return .failure(
+                .sshFailed(step: "send-bridge-auth-token", exitCode: outcome.exitCode, stderr: outcome.output))
         }
         return .success(())
     }

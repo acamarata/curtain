@@ -70,18 +70,18 @@ enum CurtainStatusTool {
 
     /// Read-only parse of the `timestamp` field from the heartbeat file
     /// `SessionMonitor` writes (T-P1-E10-01), at
-    /// `~/Library/Application Support/Curtain/heartbeat.json`. Never writes to that
-    /// file, never re-implements liveness detection — this only extracts the one
-    /// field this tool contracts to return. Returns nil (not a thrown error) if the
-    /// file is missing, unreadable, or malformed, so a machine that hasn't ticked
-    /// yet (or where the enclosing directory doesn't exist) still returns a valid
-    /// `curtain_status` result with `lastHeartbeatTimestamp: null` rather than
-    /// failing the whole call.
+    /// `~/Library/Application Support/Curtain/heartbeat.json` (or
+    /// `SessionMonitor.heartbeatDirectoryOverride` when a test has set one — see
+    /// `SessionMonitor.heartbeatDirectory()`, the single source of truth both the
+    /// write side and this read side consult, so they can never disagree about
+    /// where the file lives). Never writes to that file, never re-implements
+    /// liveness detection — this only extracts the one field this tool contracts
+    /// to return. Returns nil (not a thrown error) if the file is missing,
+    /// unreadable, or malformed, so a machine that hasn't ticked yet (or where the
+    /// enclosing directory doesn't exist) still returns a valid `curtain_status`
+    /// result with `lastHeartbeatTimestamp: null` rather than failing the whole call.
     private static func readHeartbeatTimestamp() -> String? {
-        guard
-            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("Curtain", isDirectory: true)
-        else { return nil }
+        guard let dir = SessionMonitor.heartbeatDirectory() else { return nil }
         let fileURL = dir.appendingPathComponent("heartbeat.json")
         guard
             let data = try? Data(contentsOf: fileURL),

@@ -22,6 +22,14 @@ Constraints: uses only the standard library -- no new dependency is added for
              version. Binds to a distinct local port from TinyPilot's own API
              port (see DEFAULT_HEALTH_PORT's doc comment and Bridge/README.md's
              "Health endpoint" section for the port-choice rationale).
+
+             SECURITY (auth follow-up): like crash_relay.py, this binds to
+             0.0.0.0 for deliberate LAN reachability. /health leaks only
+             read-only status/version info (lower severity than the
+             crash-report relay), but the SAME shared-secret auth is applied
+             here too for consistency rather than carving out a documented
+             exception -- see `auth.py`. `do_GET` calls `require_auth` as
+             its first statement.
 SPORT: MASTER-APPS (Bridge/ deployment artifact, T-P1-E11-03)
 """
 
@@ -34,6 +42,8 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import PackageNotFoundError, version
 from socketserver import ThreadingMixIn
+
+from curtain_bridge.auth import load_bridge_auth_token, require_auth
 
 logger = logging.getLogger("curtain_bridge.health")
 
@@ -85,6 +95,15 @@ class _HealthRequestHandler(BaseHTTPRequestHandler):
     server_version = "curtain-bridge-health/1.0"
 
     def do_GET(self) -> None:  # noqa: N802 (stdlib-mandated method name)
+        # Auth check first, before path routing -- matches crash_relay.py's
+        # do_POST ordering. /health has no body to protect from being
+        # buffered, but the ordering is kept identical across both handlers
+        # so there is exactly one place a reviewer needs to check for "does
+        # auth run before anything else."
+        expected_token: str | None = self.server.auth_token  # type: ignore[attr-defined]
+        if not require_auth(self, expected_token):
+            return
+
         if self.path != "/health":
             self.send_response(404)
             self.end_headers()
@@ -120,9 +139,10 @@ class _HealthHTTPServer(ThreadingMixIn, HTTPServer):
 
     daemon_threads = True
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, *args: object, auth_token: str | None = None, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self.started_at = time.monotonic()
+        self.auth_token = auth_token
 
 
 class HealthModule:
@@ -150,7 +170,18 @@ class HealthModule:
         # `config` is a service.BridgeConfig; typed as object here to avoid a
         # circular import (service.py imports this module to register it).
         port = int(getattr(config, "extra", {}).get("health_port", DEFAULT_HEALTH_PORT))  # type: ignore[union-attr]
-        self._server = _HealthHTTPServer(("0.0.0.0", port), _HealthRequestHandler)
+        # Auth token path override, matching crash_relay.py's own
+        # config.extra["bridge_auth_token_path"] escape hatch for tests.
+        token_path = getattr(config, "extra", {}).get(  # type: ignore[union-attr]
+            "bridge_auth_token_path", None
+        )
+        auth_token = load_bridge_auth_token(token_path) if token_path else load_bridge_auth_token()
+        if auth_token is None:
+            logger.warning(
+                "health: no Bridge auth token provisioned yet -- ALL requests will be "
+                "rejected with 401 until the setup wizard delivers one"
+            )
+        self._server = _HealthHTTPServer(("0.0.0.0", port), _HealthRequestHandler, auth_token=auth_token)
         self._thread = threading.Thread(
             target=self._server.serve_forever,
             name="curtain-bridge-health",

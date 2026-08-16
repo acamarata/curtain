@@ -107,11 +107,24 @@ public enum CrashReportMonitor {
     /// KVM Bridge configuration if a target has ever been configured; if
     /// none has, there is nowhere to send, and the call is a no-op success
     /// (nothing to relay through).
+    ///
+    /// SECURITY (auth follow-up): `crash_relay.py` now requires the same
+    /// shared-secret `Authorization: Bearer <token>` header
+    /// `KVMBridgeDeployer.checkHealth` attaches (see that type's doc
+    /// comment) — this closure attaches it here too, reading
+    /// `Settings.kvmBridgeAuthToken`. `check()` itself guards on the token
+    /// being present BEFORE calling this closure at all (mirroring its
+    /// existing `kvmBridgeHost` nil-check immediately above this call site)
+    /// so a missing token produces a clear, distinct log message rather
+    /// than this closure silently sending an unauthenticated request that
+    /// the Bridge would 401.
     static var sendSummary: (String, String) async -> Bool = { host, summary in
         guard let url = URL(string: "http://\(host):\(crashRelayPort)/crash-report") else { return false }
+        guard let token = Settings.kvmBridgeAuthToken else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 5.0
         guard let body = try? JSONSerialization.data(withJSONObject: ["summary": summary]) else { return false }
         request.httpBody = body
@@ -336,6 +349,22 @@ public enum CrashReportMonitor {
         guard let bridgeHost = Settings.kvmBridgeHost, !bridgeHost.isEmpty else {
             Log.event(
                 "CrashReportMonitor: recovery launch detected but no KVM Bridge host is configured — cannot relay")
+            return
+        }
+
+        // Distinct, clear guard (mirrors the kvmBridgeHost check immediately
+        // above) rather than letting sendSummary silently send an
+        // unauthenticated request the Bridge would reject with 401 — an
+        // already-deployed Bridge from before the shared-secret auth fix
+        // (or a fresh install that hasn't reached the wizard's token step
+        // yet) has no token stored, and that case deserves its own clear
+        // log line pointing back at the setup wizard, not a generic
+        // "relay failed (Bridge unreachable?)" message that would suggest a
+        // network problem instead of a missing credential.
+        guard Settings.kvmBridgeAuthToken != nil else {
+            Log.event(
+                "CrashReportMonitor: recovery launch detected but no KVM Bridge auth token is stored — "
+                    + "re-run the KVM Bridge setup wizard to deliver one — cannot relay")
             return
         }
 

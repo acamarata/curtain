@@ -20,9 +20,15 @@ SPORT: MASTER-APPS (Bridge/ deployment artifact, T-P1-E12-01)
 from __future__ import annotations
 
 import asyncio
+import io
+import math
+from importlib import resources
 from pathlib import Path
 
+import cv2
+import numpy as np
 import pytest
+from PIL import Image
 
 from curtain_bridge.detection import (
     CONFIDENCE_THRESHOLD,
@@ -30,6 +36,7 @@ from curtain_bridge.detection import (
     DetectionResult,
     DetectionState,
     VideoMonitorModule,
+    _best_match_score,
     detect_state,
 )
 
@@ -247,6 +254,49 @@ async def test_video_monitor_skips_none_screenshot():
 
     assert client.call_count >= 1
     assert received == []
+
+
+# -- NaN/degenerate-frame guard -----------------------------------------------
+
+
+def test_best_match_score_is_finite_for_uniform_frame():
+    # Regression guard: a near-zero-variance frame (e.g. solid black/gray
+    # right after an HDMI lock) can make TM_CCOEFF_NORMED's normalization
+    # denominator go to ~zero and produce NaN entries in matchTemplate's
+    # result matrix. _best_match_score must sanitize those away rather than
+    # letting a NaN win minMaxLoc's max and propagate into detect_state()'s
+    # tie-break loop (which would otherwise fall through to its "unreachable"
+    # AssertionError, per detection.py's docstring on this fix).
+    frame_bgr = np.full((800, 1280, 3), 128, dtype=np.uint8)
+
+    template_bytes = (
+        resources.files("curtain_bridge.fixtures.templates")
+        .joinpath("filevault_prompt.png")
+        .read_bytes()
+    )
+    template_rgb = np.array(Image.open(io.BytesIO(template_bytes)).convert("RGB"))
+    template_bgr = cv2.cvtColor(template_rgb, cv2.COLOR_RGB2BGR)
+
+    score = _best_match_score(frame_bgr, template_bgr)
+    assert math.isfinite(score)
+    assert not math.isnan(score)
+
+
+def test_detect_state_handles_uniform_frame_without_raising():
+    # End-to-end version of the guard above, through detect_state() itself --
+    # confirms the whole classification path (not just _best_match_score) is
+    # safe against a degenerate frame, with no AssertionError and a clean
+    # NO_MATCH-shaped result (finite confidence, valid DetectionState).
+    height, width = 800, 1280
+    frame = np.full((height, width, 3), 128, dtype=np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(frame).save(buf, format="PNG")
+
+    result = detect_state(buf.getvalue())
+
+    assert isinstance(result, DetectionResult)
+    assert isinstance(result.state, DetectionState)
+    assert math.isfinite(result.confidence)
 
 
 def test_poll_interval_and_threshold_are_documented_constants():

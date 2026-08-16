@@ -21,7 +21,17 @@ import XCTest
 /// Constraints: each test gets its own isolated UserDefaults suite and a fresh
 ///      MCPServer/port so tests never share listener state. `Settings.mcpServerEnabled`
 ///      is set true only inside tests that need a running server; the disabled-gate
-///      test explicitly proves the opposite.
+///      test explicitly proves the opposite. `heartbeat.json` lives under a private
+///      per-test-run temp directory via `SessionMonitor.heartbeatDirectoryOverride`
+///      (the same seam `SessionMonitorHeartbeatTests` uses, pointed at a completely
+///      separate directory from that file's) rather than the real Application
+///      Support path — a prior version of this file wrote the hardcoded fixture
+///      timestamp straight to the real, shared `heartbeat.json`, which a real
+///      `SessionMonitor` instance started concurrently by `SessionMonitorHeartbeatTests`
+///      (different XCTestCase, different test target, both linked into the same
+///      `swift test` process) could clobber with a real current timestamp between
+///      this file's write and its later read — see CHANGELOG.md's `[Unreleased]`
+///      entry for the observed failure and the fix.
 /// SPORT: MASTER-MCPSERVER
 @MainActor
 final class MCPServerTests: XCTestCase {
@@ -29,6 +39,7 @@ final class MCPServerTests: XCTestCase {
     private var suiteName: String!
     private var originalDefaults: UserDefaults!
     private var heartbeatURL: URL!
+    private var tempDir: URL!
     private var coordinator: SessionCoordinator!
     private var server: MCPServer!
 
@@ -41,10 +52,14 @@ final class MCPServerTests: XCTestCase {
         Settings.d = isolated
         Settings.registerDefaults()
 
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Curtain", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        heartbeatURL = dir.appendingPathComponent("heartbeat.json")
+        // Isolated per-test-run directory, unique per test invocation and entirely
+        // separate from SessionMonitorHeartbeatTests' own directory and from the
+        // real Application Support path — see this file's Constraints doc above.
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MCPServerTests-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        SessionMonitor.heartbeatDirectoryOverride = tempDir
+        heartbeatURL = tempDir.appendingPathComponent("heartbeat.json")
 
         coordinator = SessionCoordinator()
     }
@@ -52,6 +67,8 @@ final class MCPServerTests: XCTestCase {
     override func tearDown() {
         server?.stop()
         server = nil
+        SessionMonitor.heartbeatDirectoryOverride = nil
+        try? FileManager.default.removeItem(at: tempDir)
         UserDefaults().removePersistentDomain(forName: suiteName)
         Settings.d = originalDefaults
         super.tearDown()

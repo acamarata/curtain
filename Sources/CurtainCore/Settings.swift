@@ -133,6 +133,22 @@ public enum Settings {
         // path) — plain hostname/IP, same risk class as any other network
         // config value already in this file (e.g. displayLinkUUIDs).
         public static let kvmBridgeHost = "kvmBridge.host"
+        // KVM Bridge shared-secret auth token (security follow-up): the
+        // bearer token `KVMBridgeDeployer.sendBridgeAuthToken` generates and
+        // relays to the Pi's `/etc/curtain-bridge/auth-token`, echoed back
+        // here so `checkHealth`/`CrashReportMonitor` can present it on every
+        // request to the Bridge's otherwise-unauthenticated (0.0.0.0-bound)
+        // /health and /crash-report endpoints. Deliberately plain
+        // UserDefaults, NOT Keychain: this is an operational token for an
+        // internal Mac<->Bridge LAN channel, trivially revocable by
+        // re-running the setup wizard (which generates and sends a fresh
+        // one) -- a materially different risk class from the Telegram bot
+        // token (which is NEVER persisted on the Mac at all, see
+        // KVMBridgeDeployer's class doc comment) or the unlock password
+        // (Keychain-backed, see Settings+PasswordSecurity.swift). Same
+        // storage-risk tier as kvmDeviceVendorID/kvmExcludedDisplayUUIDs
+        // above.
+        public static let kvmBridgeAuthToken = "kvmBridge.authToken"
         // KVM device identity (T-P1-E13-02): the TinyPilot's registered USB HID
         // identity, captured once during E-11's setup-wizard pairing flow. This is
         // a storage CONTRACT — E-11's pairing UI is responsible for writing these
@@ -386,6 +402,17 @@ public enum Settings {
     public static var kvmBridgeHost: String? {
         get { d.string(forKey: Key.kvmBridgeHost) }
         set { d.set(newValue, forKey: Key.kvmBridgeHost) }
+    }
+
+    /// Shared-secret bearer token for the Bridge's /health and
+    /// /crash-report endpoints, or nil if the setup wizard has never
+    /// generated and sent one yet (e.g. an install that predates this
+    /// security fix, and hasn't been re-run through the wizard since).
+    /// Plain UserDefaults storage -- see `Key.kvmBridgeAuthToken`'s doc
+    /// comment for the risk-tiering reasoning.
+    public static var kvmBridgeAuthToken: String? {
+        get { d.string(forKey: Key.kvmBridgeAuthToken) }
+        set { d.set(newValue, forKey: Key.kvmBridgeAuthToken) }
     }
 
     // MARK: - KVM device identity (T-P1-E13-02)

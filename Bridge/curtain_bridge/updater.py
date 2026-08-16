@@ -164,9 +164,25 @@ def _query_health(timeout: float = 5.0) -> dict[str, object] | None:
     Constraints: talks to the LOCAL health port only (127.0.0.1) -- this is
                  the Pi checking itself post-swap, distinct from
                  KVMBridgeDeployer.checkHealth's remote/LAN call from the Mac.
+                 Since health.py now requires the shared-secret bearer token
+                 (see auth.py) on every request -- including this Pi-local
+                 self-check -- this reads the SAME token file health.py
+                 itself loads from (`auth.DEFAULT_AUTH_TOKEN_PATH`) and
+                 presents it. A missing token file degrades the same as any
+                 other health-check failure (the request goes out with no
+                 header, gets a 401, and collapses into the same "couldn't
+                 confirm health" None return as every other failure mode
+                 here) rather than raising.
     """
+    from curtain_bridge.auth import load_bridge_auth_token
+
+    headers = {}
+    token = load_bridge_auth_token()
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        with urllib.request.urlopen(HEALTH_URL, timeout=timeout) as response:
+        request = urllib.request.Request(HEALTH_URL, headers=headers, method="GET")
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             if response.status != 200:
                 return None
             import json

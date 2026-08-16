@@ -87,6 +87,16 @@ PROMPT_TEXT = {
     ),
 }
 
+# Sent to the human when deleteMessage fails for their password-reply message
+# (see TelegramLoginModule._handle_update) -- the human otherwise gets zero
+# signal that their plaintext password is still sitting in Telegram chat
+# history, since the existing except-branch there only logs the failure.
+_DELETE_FAILED_WARNING = (
+    "Warning: Curtain could not delete your password reply from this chat "
+    "history. Please delete that message manually. Continuing with the "
+    "unlock attempt now."
+)
+
 # Default location E-11-02's setup wizard writes the bot token to over SSH
 # (see `KVMBridgeDeployer.sendTelegramToken`, which pipes the raw token bytes
 # via stdin to `cat > /etc/curtain-bridge/telegram-token` -- no JSON wrapper,
@@ -572,6 +582,14 @@ class TelegramLoginModule:
                 "must not block unlock)",
                 message_id,
             )
+            try:
+                await self._send_in_thread(_DELETE_FAILED_WARNING)
+            except Exception:
+                logger.exception(
+                    "telegram_login: failed to send delete-failure warning "
+                    "message_id=%s (continuing to hand off password regardless)",
+                    message_id,
+                )
 
         await self._on_password(password)
         del password  # explicit: drop the local reference the instant it's handed off

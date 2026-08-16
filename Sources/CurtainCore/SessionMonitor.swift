@@ -26,7 +26,7 @@ import Foundation
 ///      one session's Console.app/`log stream` lines can be filtered together.
 /// SPORT: MASTER-SESSIONMONITOR
 @MainActor
-final class SessionMonitor {
+public final class SessionMonitor {
     /// Fires when a connect is detected. Carries the freshly-generated episode ID
     /// (see `currentEpisodeID`) so the coordinator can thread it through the
     /// session's connect/idle/end log lines without a second lookup.
@@ -145,7 +145,9 @@ final class SessionMonitor {
     ///            - `idleFired` (Bool, this monitor's own `idleFired` var)
     ///          Cadence: written once per tick, ~2s (pollInterval). CONSUMED BY THE
     ///          FUTURE E-14 `curtain_status` MCP TOOL — do not rename/remove any of
-    ///          these fields without updating that tool.
+    ///          these fields without updating that tool. Directory resolution goes
+    ///          through `heartbeatDirectory()`, which honors `heartbeatDirectoryOverride`
+    ///          (test seam, `nil` in production) — see that property's doc comment.
     /// Constraints: must never crash the tick loop. Directory creation and the file
     ///          write are both best-effort: any thrown error (disk full, permission
     ///          race, sandbox denial) is caught and dropped, leaving the previous
@@ -189,15 +191,40 @@ final class SessionMonitor {
         return formatter
     }()
 
+    /// Injection seam for tests: the directory `writeHeartbeatFile` writes into,
+    /// defaulting to `nil` (production real path, `~/Library/Application
+    /// Support/Curtain`). Production code never overrides this — see
+    /// `heartbeatDirectory()` below, which falls back to the real Application
+    /// Support path whenever this is `nil`. Tests set it to a private per-test-run
+    /// temp directory (mirroring the `CaptureProbe.processRunner` seam convention)
+    /// so a real `SessionMonitor` instance started by one test can never race
+    /// another test's, or a real running Curtain instance's, heartbeat file.
+    /// `CurtainStatusTool`'s read side consults the same override via
+    /// `SessionMonitor.heartbeatDirectory()` so write and read sides always agree
+    /// on the current path.
+    public nonisolated(unsafe) static var heartbeatDirectoryOverride: URL?
+
+    /// Resolves the directory `heartbeat.json` lives in: `heartbeatDirectoryOverride`
+    /// if a test has set one, otherwise the real `~/Library/Application
+    /// Support/Curtain` path. Shared by both the write side (`writeHeartbeatFile`
+    /// below) and the read side (`CurtainStatusTool.readHeartbeatTimestamp`) so
+    /// they can never disagree about where the file lives. `public` (rather than
+    /// internal) so the `Curtain` target's `CurtainStatusTool` can consult the same
+    /// resolution logic across the module boundary — this is a real, non-`@testable`
+    /// cross-target dependency, unlike the tests below which reach the override
+    /// property directly via `@testable import CurtainCore`.
+    public nonisolated static func heartbeatDirectory() -> URL? {
+        if let override = heartbeatDirectoryOverride { return override }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Curtain", isDirectory: true)
+    }
+
     /// Best-effort directory-create + atomic overwrite. Runs off the main thread
     /// (called only from `probeQueue`). Never throws out of this function — any
     /// failure is silently dropped so a wedged disk/permission race can never crash
     /// the tick loop (see CR-A guidance on this ticket).
     nonisolated private static func writeHeartbeatFile(_ snapshot: HeartbeatSnapshot) {
-        guard
-            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("Curtain", isDirectory: true)
-        else { return }
+        guard let dir = heartbeatDirectory() else { return }
 
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

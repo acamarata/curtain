@@ -29,8 +29,28 @@ import CurtainShared
 ///              (or any reachable Linux/macOS SSH host), set
 ///              `CURTAIN_LOCAL_SSH_TEST=1` and `CURTAIN_LOCAL_SSH_HOST` (defaults
 ///              to `127.0.0.1`) and re-run `swift test`.
+///
+///              AUTH FOLLOW-UP: `checkHealth` now requires
+///              `Settings.kvmBridgeAuthToken` to be set (fails fast with
+///              `.noBridgeAuthToken` otherwise) and attaches it as an
+///              `Authorization: Bearer <token>` header on every request.
+///              Every test below that reaches `checkHealth` stubs a token via
+///              `withStubbedBridgeAuthToken` and restores the prior value in
+///              `defer` — same save/restore discipline as the seams.
 /// SPORT: MASTER-APPS (Curtain.app KVM Bridge setup wizard, code-complete-hardware-unverified)
 final class KVMBridgeDeployerTests: XCTestCase {
+
+    /// Test-only stand-in bearer token. Stubbed into `Settings.kvmBridgeAuthToken`
+    /// (never Keychain — matches production storage) by every test that needs
+    /// `checkHealth` to get past its `.noBridgeAuthToken` fast-fail gate.
+    static let stubBridgeAuthToken = "test-bridge-auth-token"
+
+    private func withStubbedBridgeAuthToken<T>(_ body: () async -> T) async -> T {
+        let original = Settings.kvmBridgeAuthToken
+        Settings.kvmBridgeAuthToken = Self.stubBridgeAuthToken
+        defer { Settings.kvmBridgeAuthToken = original }
+        return await body()
+    }
 
     // MARK: - Mocked-seam tests (unconditional)
 
@@ -250,12 +270,12 @@ final class KVMBridgeDeployerTests: XCTestCase {
         body: Data?,
         error: Error? = nil
     ) {
-        KVMBridgeDeployer.healthURLSession = { url in
+        KVMBridgeDeployer.healthURLSession = { request in
             if let error {
                 return (nil, nil, error)
             }
             let response = HTTPURLResponse(
-                url: url, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: nil
+                url: request.url!, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: nil
             )
             return (body, response, nil)
         }
@@ -269,7 +289,7 @@ final class KVMBridgeDeployerTests: XCTestCase {
             """.data(using: .utf8)
         stubHealthSession(body: json)
 
-        let result = await KVMBridgeDeployer.checkHealth(host: "pi.local")
+        let result = await withStubbedBridgeAuthToken { await KVMBridgeDeployer.checkHealth(host: "pi.local") }
         guard case .success(let status) = result else { return XCTFail("expected success") }
         XCTAssertEqual(status.status, "ok")
         XCTAssertEqual(status.version, "0.1.0")
@@ -281,17 +301,59 @@ final class KVMBridgeDeployerTests: XCTestCase {
         let originalSession = KVMBridgeDeployer.healthURLSession
         defer { KVMBridgeDeployer.healthURLSession = originalSession }
         var capturedURL: URL?
-        KVMBridgeDeployer.healthURLSession = { url in
-            capturedURL = url
+        KVMBridgeDeployer.healthURLSession = { request in
+            capturedURL = request.url
             let json = """
                 {"status": "ok", "version": "0.1.0", "uptime_seconds": 1}
                 """.data(using: .utf8)
-            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
             return (json, response, nil)
         }
 
-        _ = await KVMBridgeDeployer.checkHealth(host: "192.168.1.50")
+        _ = await withStubbedBridgeAuthToken { await KVMBridgeDeployer.checkHealth(host: "192.168.1.50") }
         XCTAssertEqual(capturedURL?.absoluteString, "http://192.168.1.50:8642/health")
+    }
+
+    /// Regression guard for this security follow-up: `checkHealth` must
+    /// attach the stored token as `Authorization: Bearer <token>` on every
+    /// request, not just reach the network.
+    func testCheckHealthAttachesAuthorizationHeaderWithStoredToken() async {
+        let originalSession = KVMBridgeDeployer.healthURLSession
+        defer { KVMBridgeDeployer.healthURLSession = originalSession }
+        var capturedAuthorizationHeader: String?
+        KVMBridgeDeployer.healthURLSession = { request in
+            capturedAuthorizationHeader = request.value(forHTTPHeaderField: "Authorization")
+            let json = """
+                {"status": "ok", "version": "0.1.0", "uptime_seconds": 1}
+                """.data(using: .utf8)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            return (json, response, nil)
+        }
+
+        _ = await withStubbedBridgeAuthToken { await KVMBridgeDeployer.checkHealth(host: "pi.local") }
+        XCTAssertEqual(capturedAuthorizationHeader, "Bearer \(Self.stubBridgeAuthToken)")
+    }
+
+    /// The "no token stored" case must fail BEFORE any network call, with a
+    /// distinct, clear error — never a bare/missing header sent over the
+    /// wire that would surface the Bridge's resulting 401 as an opaque
+    /// `unexpectedStatusCode`.
+    func testCheckHealthFailsFastWithDistinctErrorWhenNoTokenStored() async {
+        let originalSession = KVMBridgeDeployer.healthURLSession
+        defer { KVMBridgeDeployer.healthURLSession = originalSession }
+        var sessionCalled = false
+        KVMBridgeDeployer.healthURLSession = { _ in
+            sessionCalled = true
+            return (nil, nil, nil)
+        }
+        let originalToken = Settings.kvmBridgeAuthToken
+        Settings.kvmBridgeAuthToken = nil
+        defer { Settings.kvmBridgeAuthToken = originalToken }
+
+        let result = await KVMBridgeDeployer.checkHealth(host: "pi.local")
+        guard case .failure(let error) = result else { return XCTFail("expected failure, got \(result)") }
+        XCTAssertEqual(error, .noBridgeAuthToken)
+        XCTAssertFalse(sessionCalled, "no request should ever be issued without a stored token")
     }
 
     func testCheckHealthFailsOnNonJSONBody() async {
@@ -299,7 +361,7 @@ final class KVMBridgeDeployerTests: XCTestCase {
         defer { KVMBridgeDeployer.healthURLSession = originalSession }
         stubHealthSession(body: "not json".data(using: .utf8))
 
-        let result = await KVMBridgeDeployer.checkHealth(host: "pi.local")
+        let result = await withStubbedBridgeAuthToken { await KVMBridgeDeployer.checkHealth(host: "pi.local") }
         switch result {
         case .success:
             XCTFail("malformed JSON body must not parse as success")
@@ -313,7 +375,7 @@ final class KVMBridgeDeployerTests: XCTestCase {
         defer { KVMBridgeDeployer.healthURLSession = originalSession }
         stubHealthSession(statusCode: 503, body: nil)
 
-        let result = await KVMBridgeDeployer.checkHealth(host: "pi.local")
+        let result = await withStubbedBridgeAuthToken { await KVMBridgeDeployer.checkHealth(host: "pi.local") }
         switch result {
         case .success:
             XCTFail("503 must not be treated as success")
@@ -328,7 +390,7 @@ final class KVMBridgeDeployerTests: XCTestCase {
         struct FakeNetworkError: Error {}
         stubHealthSession(body: nil, error: FakeNetworkError())
 
-        let result = await KVMBridgeDeployer.checkHealth(host: "pi.local")
+        let result = await withStubbedBridgeAuthToken { await KVMBridgeDeployer.checkHealth(host: "pi.local") }
         switch result {
         case .success:
             XCTFail("a transport-level error must not be treated as success")
@@ -344,9 +406,9 @@ final class KVMBridgeDeployerTests: XCTestCase {
     /// post-update health check returning different versions.
     private func stubHealthSessionSequence(_ bodies: [Data]) {
         var remaining = bodies
-        KVMBridgeDeployer.healthURLSession = { url in
+        KVMBridgeDeployer.healthURLSession = { request in
             let body = remaining.isEmpty ? bodies.last : remaining.removeFirst()
-            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
             return (body, response, nil)
         }
     }
@@ -369,7 +431,9 @@ final class KVMBridgeDeployerTests: XCTestCase {
         }
 
         let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: true)
-        let outcome = await KVMBridgeDeployer.performUpdateIfNeeded(target: target, localBridgePath: "/tmp/Bridge")
+        let outcome = await withStubbedBridgeAuthToken {
+            await KVMBridgeDeployer.performUpdateIfNeeded(target: target, localBridgePath: "/tmp/Bridge")
+        }
 
         guard case .upToDate(let version) = outcome else { return XCTFail("expected .upToDate, got \(outcome)") }
         XCTAssertEqual(version, KVMBridgeDeployer.expectedBridgeVersion)
@@ -402,7 +466,9 @@ final class KVMBridgeDeployerTests: XCTestCase {
         }
 
         let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: true)
-        let outcome = await KVMBridgeDeployer.performUpdateIfNeeded(target: target, localBridgePath: "/tmp/Bridge")
+        let outcome = await withStubbedBridgeAuthToken {
+            await KVMBridgeDeployer.performUpdateIfNeeded(target: target, localBridgePath: "/tmp/Bridge")
+        }
 
         XCTAssertTrue(deployInvoked, "a genuine version mismatch must trigger the deploy/update path")
         guard case .updated(let newVersion) = outcome else { return XCTFail("expected .updated, got \(outcome)") }
@@ -420,16 +486,16 @@ final class KVMBridgeDeployerTests: XCTestCase {
             {"status": "ok", "version": "0.0.9", "uptime_seconds": 5}
             """.data(using: .utf8)!
         var callCount = 0
-        KVMBridgeDeployer.healthURLSession = { url in
+        KVMBridgeDeployer.healthURLSession = { request in
             callCount += 1
             if callCount == 1 {
-                let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
                 return (staleJSON, response, nil)
             }
             // Post-update health check never comes back healthy — simulates
             // updater.py's rollback-safety leaving the OLD version running,
             // which this method must not mis-report as a plain "updated".
-            let response = HTTPURLResponse(url: url, statusCode: 503, httpVersion: nil, headerFields: nil)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)
             return (nil, response, nil)
         }
         KVMBridgeDeployer.processRunner = { _, _, _, _ in
@@ -437,7 +503,9 @@ final class KVMBridgeDeployerTests: XCTestCase {
         }
 
         let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: true)
-        let outcome = await KVMBridgeDeployer.performUpdateIfNeeded(target: target, localBridgePath: "/tmp/Bridge")
+        let outcome = await withStubbedBridgeAuthToken {
+            await KVMBridgeDeployer.performUpdateIfNeeded(target: target, localBridgePath: "/tmp/Bridge")
+        }
 
         guard case .failedRolledBack = outcome else {
             return XCTFail("expected .failedRolledBack when post-update health check can't confirm, got \(outcome)")
@@ -451,9 +519,69 @@ final class KVMBridgeDeployerTests: XCTestCase {
         KVMBridgeDeployer.healthURLSession = { _ in (nil, nil, FakeNetworkError()) }
 
         let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: true)
-        let outcome = await KVMBridgeDeployer.performUpdateIfNeeded(target: target, localBridgePath: "/tmp/Bridge")
+        let outcome = await withStubbedBridgeAuthToken {
+            await KVMBridgeDeployer.performUpdateIfNeeded(target: target, localBridgePath: "/tmp/Bridge")
+        }
 
         guard case .failed = outcome else { return XCTFail("expected .failed, got \(outcome)") }
+    }
+
+    // MARK: - generateBridgeAuthToken / sendBridgeAuthToken (security follow-up)
+
+    /// Confirms the generator produces a strong, unique, hex-encoded token
+    /// every call — a weak/constant/predictable generator would defeat the
+    /// entire point of the shared-secret scheme.
+    func testGenerateBridgeAuthTokenProducesStrongUniqueHexTokens() {
+        let first = KVMBridgeDeployer.generateBridgeAuthToken()
+        let second = KVMBridgeDeployer.generateBridgeAuthToken()
+
+        XCTAssertNotEqual(first, second, "two consecutive calls must not produce the same token")
+        // 32 random bytes, hex-encoded, is exactly 64 hex characters.
+        XCTAssertEqual(first.count, 64)
+        XCTAssertEqual(second.count, 64)
+        XCTAssertTrue(first.allSatisfy(\.isHexDigit), "token must be pure lowercase hex, safe for a Bearer header")
+        XCTAssertTrue(second.allSatisfy(\.isHexDigit))
+        // Not a UUID shape (8-4-4-4-12 with dashes) — confirms this is NOT
+        // backed by UUID(), which is not designed as a security token.
+        XCTAssertFalse(first.contains("-"))
+    }
+
+    func testSendBridgeAuthTokenFailsFastWhenHostKeyNotTrusted() {
+        let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: false)
+        let result = KVMBridgeDeployer.sendBridgeAuthToken(target: target, token: "abc123")
+        switch result {
+        case .success:
+            XCTFail("sendBridgeAuthToken() must not proceed without an explicitly trusted host key")
+        case .failure(let error):
+            XCTAssertEqual(error, .hostKeyNotTrusted)
+        }
+    }
+
+    /// Mirrors `testSendTelegramTokenPipesViaStdinNeverInShellString`-style
+    /// coverage (see the stdin-piping tests below for that exact pattern):
+    /// confirms the auth token is piped to a remote `cat >` via stdin, at the
+    /// documented `/etc/curtain-bridge/auth-token` path, never embedded in
+    /// the ssh argv itself.
+    func testSendBridgeAuthTokenPipesToDocumentedPathViaStdin() {
+        let originalRunner = KVMBridgeDeployer.processRunnerStdin
+        defer { KVMBridgeDeployer.processRunnerStdin = originalRunner }
+        var capturedArgs: [String] = []
+        var capturedStdin: Data?
+        KVMBridgeDeployer.processRunnerStdin = { _, args, stdin, _ in
+            capturedArgs = args
+            capturedStdin = stdin
+            return ProcessRunner.Result(output: "", exitCode: 0)
+        }
+
+        let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: true)
+        let result = KVMBridgeDeployer.sendBridgeAuthToken(target: target, token: "s3cr3t-token")
+
+        guard case .success = result else { return XCTFail("expected success") }
+        XCTAssertEqual(capturedStdin, "s3cr3t-token".data(using: .utf8))
+        XCTAssertTrue(capturedArgs.contains("cat > /etc/curtain-bridge/auth-token"))
+        // Never embedded as a separate argv element or interpolated
+        // elsewhere in the command — only stdin carries the secret.
+        XCTAssertFalse(capturedArgs.contains(where: { $0.contains("s3cr3t-token") }))
     }
 
     // MARK: - Gated local-SSH-stand-in tests

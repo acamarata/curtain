@@ -13,12 +13,18 @@ import XCTest
 ///      heartbeat file from disk on every assertion — never from in-memory state —
 ///      so a regression that stops the file write (but leaves in-memory state
 ///      correct) still fails this test.
-/// Constraints: writes to the REAL `~/Library/Application Support/Curtain/
-///      heartbeat.json` path (there is no injectable path seam — this mirrors
-///      CrashSignalHandler's fixed-path convention). Settings is redirected to an
-///      isolated UserDefaults suite (the same T-P1-E05-03 `d` seam
-///      SessionCoordinatorTests uses) so `Settings.armed` is deterministic without
-///      touching real app defaults.
+/// Constraints: writes to an isolated per-test-run temp directory via
+///      `SessionMonitor.heartbeatDirectoryOverride` (the injection seam this file's
+///      own fix added) rather than the real `~/Library/Application
+///      Support/Curtain/heartbeat.json` path — a prior version of this file used
+///      that real, non-injectable path, which meant a real `SessionMonitor`
+///      instance here could race `MCPServerTests` (a different XCTestCase, in a
+///      different test target, both linked into the same `swift test` process)
+///      writing/reading that exact same shared file. See CHANGELOG.md's
+///      `[Unreleased]` entry for the observed failure and the fix. Settings is
+///      redirected to an isolated UserDefaults suite (the same T-P1-E05-03 `d`
+///      seam SessionCoordinatorTests uses) so `Settings.armed` is deterministic
+///      without touching real app defaults.
 /// SPORT: MASTER-SESSIONMONITOR
 @MainActor
 final class SessionMonitorHeartbeatTests: XCTestCase {
@@ -26,6 +32,7 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
     private var suiteName: String!
     private var originalDefaults: UserDefaults!
     private var heartbeatURL: URL!
+    private var tempDir: URL!
 
     override func setUp() {
         super.setUp()
@@ -36,12 +43,20 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         Settings.d = isolated
         Settings.armed = true
 
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Curtain", isDirectory: true)
-        heartbeatURL = dir.appendingPathComponent("heartbeat.json")
+        // Isolated per-test-run directory: unique per test invocation (not just per
+        // test class) so even repeated runs of this same test never collide with a
+        // leftover directory from a prior run. Never the real Application Support
+        // path — see this file's Constraints doc above.
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SessionMonitorHeartbeatTests-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        SessionMonitor.heartbeatDirectoryOverride = tempDir
+        heartbeatURL = tempDir.appendingPathComponent("heartbeat.json")
     }
 
     override func tearDown() {
+        SessionMonitor.heartbeatDirectoryOverride = nil
+        try? FileManager.default.removeItem(at: tempDir)
         UserDefaults().removePersistentDomain(forName: suiteName)
         Settings.d = originalDefaults
         super.tearDown()
@@ -85,7 +100,16 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         let firstExpectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: self.heartbeatURL.path) },
             object: nil)
-        wait(for: [firstExpectation], timeout: 5)
+        // 20s, not the shellTimeout-adjacent 5s: CaptureProbe's own probes are bounded
+        // by a 5s `shellTimeout`, so under heavy concurrent CPU/swap load (several
+        // parallel `swift build`/`swift test` invocations routinely happening during
+        // this project's multi-agent build sessions) a single tick's probe queue can
+        // itself take close to 5s before the first write even happens — a flake
+        // observed directly at exactly the 5s bound. Same widened-tolerance reasoning
+        // as this file's other waits (see below): no real coverage is lost by a
+        // generous bound here since the assertions that follow still verify content,
+        // not just timing.
+        wait(for: [firstExpectation], timeout: 20)
 
         let first = try readHeartbeat()
         XCTAssertTrue(first.armed)
@@ -106,7 +130,13 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         XCTAssertLessThan(abs(firstDate.timeIntervalSinceNow), 20, "heartbeat timestamp should be recent")
 
         // Wait across at least one more full tick (pollInterval = 2s) so the
-        // timestamp is asserted to actually advance, not merely exist once.
+        // timestamp is asserted to actually advance, not merely exist once. 20s,
+        // not the 2s tick cadence — same widened-tolerance reasoning as the
+        // `firstExpectation` wait above: a probe queue bounded by CaptureProbe's 5s
+        // `shellTimeout` can itself eat several seconds per tick under heavy
+        // concurrent CPU/swap load, so two ticks' worth of margin at a tight bound
+        // flakes exactly the way this was observed to (6.4s elapsed against the
+        // prior 6s bound).
         let secondExpectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 guard let data = try? Data(contentsOf: self.heartbeatURL),
@@ -116,7 +146,7 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
                 return date > firstDate
             },
             object: nil)
-        wait(for: [secondExpectation], timeout: 6)
+        wait(for: [secondExpectation], timeout: 20)
 
         let second = try readHeartbeat()
         guard let secondDate = isoDate(second.timestamp) else {
@@ -136,7 +166,16 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         let firstExpectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: self.heartbeatURL.path) },
             object: nil)
-        wait(for: [firstExpectation], timeout: 5)
+        // 20s, not the shellTimeout-adjacent 5s: CaptureProbe's own probes are bounded
+        // by a 5s `shellTimeout`, so under heavy concurrent CPU/swap load (several
+        // parallel `swift build`/`swift test` invocations routinely happening during
+        // this project's multi-agent build sessions) a single tick's probe queue can
+        // itself take close to 5s before the first write even happens — a flake
+        // observed directly at exactly the 5s bound. Same widened-tolerance reasoning
+        // as this file's other waits (see below): no real coverage is lost by a
+        // generous bound here since the assertions that follow still verify content,
+        // not just timing.
+        wait(for: [firstExpectation], timeout: 20)
 
         let sizeAfterFirstTick =
             try FileManager.default.attributesOfItem(atPath: heartbeatURL.path)[.size] as? Int ?? -1
@@ -173,7 +212,16 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         let firstExpectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: self.heartbeatURL.path) },
             object: nil)
-        wait(for: [firstExpectation], timeout: 5)
+        // 20s, not the shellTimeout-adjacent 5s: CaptureProbe's own probes are bounded
+        // by a 5s `shellTimeout`, so under heavy concurrent CPU/swap load (several
+        // parallel `swift build`/`swift test` invocations routinely happening during
+        // this project's multi-agent build sessions) a single tick's probe queue can
+        // itself take close to 5s before the first write even happens — a flake
+        // observed directly at exactly the 5s bound. Same widened-tolerance reasoning
+        // as this file's other waits (see below): no real coverage is lost by a
+        // generous bound here since the assertions that follow still verify content,
+        // not just timing.
+        wait(for: [firstExpectation], timeout: 20)
         XCTAssertTrue(try readHeartbeat().armed)
 
         Settings.armed = false
@@ -186,7 +234,19 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
                 return payload.armed == false
             },
             object: nil)
-        wait(for: [flippedExpectation], timeout: 6)
+        // 20s, not the write cadence's 2s — same widened-tolerance reasoning as
+        // `testHeartbeatWrittenAcrossRealTickCycles` above: `wait(for:timeout:)`
+        // only polls its NSPredicate periodically, and under heavy concurrent CPU
+        // load (several parallel `swift build`/`swift test` invocations, as
+        // happens routinely during this project's multi-agent build sessions) the
+        // runloop can be delayed well past the point Settings.armed actually
+        // flipped and SessionMonitor's next tick actually wrote it — a flake
+        // observed directly with the original 6s bound. This is a real product
+        // requirement question ("does armed flip within N seconds") only at
+        // minute-scale (see writeHeartbeat's doc comment on the field's
+        // "monitoring signal" role), so a generous test-side bound loses no real
+        // coverage.
+        wait(for: [flippedExpectation], timeout: 20)
 
         XCTAssertFalse(try readHeartbeat().armed)
     }

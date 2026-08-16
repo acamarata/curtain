@@ -259,6 +259,44 @@ async def test_typing_in_progress_flag_resets_after_unsupported_character(monkey
     assert all(c["code"] != "KeyQ" for c in tinypilot.calls)
 
 
+# -- partial-typing guard + position-aware error message ----------------------
+
+
+@pytest.mark.asyncio
+async def test_unsupported_character_mid_password_types_nothing(monkeypatch):
+    """
+    Purpose: the partial-typing bug this fix closes -- if the password has an
+    unsupported character at a position > 1, send_keystroke must be called
+    ZERO times (the whole password is validated against the keymap before any
+    character is typed), never leaving a partial/wrong string already typed
+    into the target Mac's password field.
+    """
+    _patch_timing(monkeypatch, timeout=0.1, interval=0.02)
+
+    tinypilot = _FakeTinyPilotClient()
+    telegram = _FakeTelegramClient()
+    poller = _ManualPoller(DetectionState.NO_MATCH)
+
+    module = HidUnlockModule(tinypilot, telegram, chat_id=555, detection_poller=poller)
+    await module.handle_password("good€bad")  # euro sign at position 5
+
+    assert tinypilot.calls == []
+
+
+@pytest.mark.asyncio
+async def test_unsupported_character_message_names_correct_position(monkeypatch):
+    _patch_timing(monkeypatch, timeout=0.1, interval=0.02)
+
+    tinypilot = _FakeTinyPilotClient()
+    telegram = _FakeTelegramClient()
+    poller = _ManualPoller(DetectionState.NO_MATCH)
+
+    module = HidUnlockModule(tinypilot, telegram, chat_id=555, detection_poller=poller)
+    await module.handle_password("bad€pw")  # euro sign is the 4th character
+
+    assert any("position 4" in text for _chat, text in telegram.sent)
+
+
 # -- LatestStateTracker -------------------------------------------------------------
 
 

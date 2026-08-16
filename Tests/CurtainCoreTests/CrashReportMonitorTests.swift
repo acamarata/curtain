@@ -58,6 +58,14 @@ final class CrashReportMonitorTests: XCTestCase {
         super.tearDown()
     }
 
+    /// Test-only stand-in bearer token, mirroring
+    /// `KVMBridgeDeployerTests.stubBridgeAuthToken`. `check()` now guards on
+    /// `Settings.kvmBridgeAuthToken` being present (security follow-up)
+    /// BEFORE calling `sendSummary` at all — every positive-path test below
+    /// sets this in the isolated `Settings.d` suite `setUp` already redirects
+    /// to, so it never touches real app defaults.
+    private static let stubBridgeAuthToken = "test-crash-monitor-auth-token"
+
     // MARK: - Fixture helpers
 
     /// Writes a real-shaped `.ips` fixture: a compact header JSON line
@@ -159,6 +167,7 @@ final class CrashReportMonitorTests: XCTestCase {
     func testCheckSendsSummaryOnRecoveryLaunchWithNewReport() async throws {
         try writeFixtureReport(named: "crash.ips")
         Settings.kvmBridgeHost = "pi.local"
+        Settings.kvmBridgeAuthToken = Self.stubBridgeAuthToken
         CrashReportMonitor.readLastHeartbeatTimestamp = { Date().addingTimeInterval(-3600) }
         CrashReportMonitor.readBootTime = { Date() }
 
@@ -183,6 +192,7 @@ final class CrashReportMonitorTests: XCTestCase {
     func testCheckDoesNotSendOnOrdinaryRestartEvenWithNewReport() async throws {
         try writeFixtureReport(named: "crash.ips")
         Settings.kvmBridgeHost = "pi.local"
+        Settings.kvmBridgeAuthToken = Self.stubBridgeAuthToken
         CrashReportMonitor.readLastHeartbeatTimestamp = { Date().addingTimeInterval(-15) }
         CrashReportMonitor.readBootTime = { Date() }
 
@@ -218,6 +228,7 @@ final class CrashReportMonitorTests: XCTestCase {
     func testCheckDoesNotSendWhenNoBridgeHostConfigured() async throws {
         try writeFixtureReport(named: "crash.ips")
         Settings.kvmBridgeHost = nil
+        Settings.kvmBridgeAuthToken = Self.stubBridgeAuthToken
         CrashReportMonitor.readLastHeartbeatTimestamp = { Date().addingTimeInterval(-3600) }
         CrashReportMonitor.readBootTime = { Date() }
 
@@ -236,6 +247,7 @@ final class CrashReportMonitorTests: XCTestCase {
     func testCheckIsIdempotentAcrossRepeatedCalls() async throws {
         try writeFixtureReport(named: "crash.ips")
         Settings.kvmBridgeHost = "pi.local"
+        Settings.kvmBridgeAuthToken = Self.stubBridgeAuthToken
         CrashReportMonitor.readLastHeartbeatTimestamp = { Date().addingTimeInterval(-3600) }
         CrashReportMonitor.readBootTime = { Date() }
 
@@ -250,4 +262,92 @@ final class CrashReportMonitorTests: XCTestCase {
 
         XCTAssertEqual(sendCount, 1, "the second run's marker should already cover the first run's report")
     }
+
+    // MARK: - Auth token guard (security follow-up)
+
+    /// A recovery launch with a new report and a configured host, but NO
+    /// stored auth token (e.g. an install from before this security fix that
+    /// hasn't been re-run through the setup wizard) -> must not call
+    /// sendSummary at all, and must produce the distinct log path rather than
+    /// silently sending an unauthenticated request the Bridge would 401.
+    func testCheckDoesNotSendWhenNoBridgeAuthTokenStored() async throws {
+        try writeFixtureReport(named: "crash.ips")
+        Settings.kvmBridgeHost = "pi.local"
+        Settings.kvmBridgeAuthToken = nil
+        CrashReportMonitor.readLastHeartbeatTimestamp = { Date().addingTimeInterval(-3600) }
+        CrashReportMonitor.readBootTime = { Date() }
+
+        var sendWasCalled = false
+        CrashReportMonitor.sendSummary = { _, _ in
+            sendWasCalled = true
+            return true
+        }
+
+        await CrashReportMonitor.check()
+
+        XCTAssertFalse(sendWasCalled, "no relay attempt should ever be made without a stored auth token")
+        XCTAssertNotNil(Settings.crashMonitorLastCheckedTimestamp, "marker must still advance")
+    }
+
+    /// Confirms the production `sendSummary` closure itself attaches the
+    /// stored token as an `Authorization: Bearer <token>` header — this test
+    /// swaps back to the REAL closure (not the test-installed fake) to
+    /// verify the header-attachment behavior directly, using a
+    /// `URLProtocol` intercept (Foundation's own documented mechanism for
+    /// observing an outgoing `URLRequest` without a real network call) so
+    /// the test proves the ACTUAL production closure — not a stand-in —
+    /// attaches the header.
+    func testProductionSendSummaryAttachesAuthorizationHeader() async throws {
+        Settings.kvmBridgeAuthToken = Self.stubBridgeAuthToken
+        _CapturingURLProtocol.capturedAuthorizationHeader = nil
+        _CapturingURLProtocol.register()
+        defer { _CapturingURLProtocol.unregister() }
+
+        // Exercise the REAL production closure (CrashReportMonitor.sendSummary's
+        // default value), not a test-installed fake -- this is what makes the
+        // test a genuine regression guard on the header-attachment code path.
+        // `URLSession.shared` cannot have a protocol class injected after the
+        // fact, so this relies on `URLProtocol.registerClass`, which
+        // URLSession's default configuration consults for every request.
+        _ = await CrashReportMonitor.sendSummary("192.0.2.1", "test summary")
+
+        XCTAssertEqual(_CapturingURLProtocol.capturedAuthorizationHeader, "Bearer \(Self.stubBridgeAuthToken)")
+    }
+}
+
+// MARK: - URLProtocol-based request capture (file-private, test-only)
+
+/// Purpose: intercepts every outgoing `URLRequest` made through
+/// `URLSession.shared` (via `URLProtocol.registerClass`, Foundation's
+/// documented mechanism for this) so
+/// `testProductionSendSummaryAttachesAuthorizationHeader` can inspect the
+/// REAL header `CrashReportMonitor.sendSummary`'s production closure
+/// attaches, without a real network call and without the risks of a
+/// hand-rolled socket server under Swift 6 strict concurrency.
+/// Inputs: none (registered/unregistered per-test). Outputs: captures the
+/// request's `Authorization` header into a static var the test reads after
+/// the request completes; responds with a synthetic 200 so the awaiting
+/// `sendSummary` call completes normally.
+/// Constraints: test-only. `capturedAuthorizationHeader` is deliberately
+/// static (URLProtocol instances are created internally by URLSession, not
+/// by the test) — safe here since exactly one test in this file registers
+/// this class and it is unregistered in that test's `defer`.
+private final class _CapturingURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var capturedAuthorizationHeader: String?
+
+    static func register() { URLProtocol.registerClass(_CapturingURLProtocol.self) }
+    static func unregister() { URLProtocol.unregisterClass(_CapturingURLProtocol.self) }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        _CapturingURLProtocol.capturedAuthorizationHeader = request.value(forHTTPHeaderField: "Authorization")
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: "{}".data(using: .utf8)!)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

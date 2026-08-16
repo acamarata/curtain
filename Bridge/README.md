@@ -161,6 +161,43 @@ over the LAN to verify the Bridge is reachable and to detect version skew,
 falling back to an SSH-tunneled call if a direct connection isn't reachable
 (see that file's doc comment for the reasoning).
 
+**Authentication required.** Both `/health` and `/crash-report` (below) bind
+to `0.0.0.0`, not loopback — this is deliberate, since Curtain.app on the Mac
+needs to reach them directly over the LAN (see the direct-vs-tunneled
+reasoning above). That means every request must present a shared-secret
+bearer token: `Authorization: Bearer <token>`, checked against
+`/etc/curtain-bridge/auth-token` (see `curtain_bridge.auth`). A request with
+no token, the wrong token, or presented before any token has ever been
+provisioned gets a `401 {"status": "unauthorized"}` — the Bridge never falls
+back to allowing unauthenticated access. Curtain.app's setup wizard generates
+a fresh, cryptographically random token on every deploy
+(`KVMBridgeDeployer.generateBridgeAuthToken`) and delivers it over the same
+SSH channel used for the Telegram bot token
+(`KVMBridgeDeployer.sendBridgeAuthToken`); it is stored on the Mac in
+`Settings.kvmBridgeAuthToken` (plain UserDefaults — an operational token for
+this LAN channel, trivially revocable by re-running the wizard, a different
+risk class from the Telegram bot token or the unlock password) and attached
+automatically by both `checkHealth` and the crash-report relay call below.
+
+## Crash-report relay
+
+`curtain_bridge.crash_relay` exposes `POST /crash-report` on **port 8643**
+(distinct from TinyPilot's port 80 and the health port 8642). Curtain.app
+posts a short human-readable crash summary here after detecting it just
+recovered from an unexpected reboot; the Bridge relays it into the same
+Telegram chat the FileVault-unlock flow uses (see
+`Sources/CurtainCore/CrashReportMonitor.swift`'s doc comment for the full
+architectural reasoning). Request body: `{"summary": "<text>"}`. Responses:
+`200 {"status": "sent", "message_id": N}` on success, `503
+{"status": "no_chat_id"}` if no human has ever messaged the bot yet, `400`
+for a malformed/empty body, `502` if the Telegram send itself fails.
+
+Like `/health`, this endpoint requires the same `Authorization: Bearer
+<token>` shared secret — see "Health endpoint" above for the full
+authentication story. The auth check runs as the very first thing
+`do_POST` does, before the request body is even read, so an unauthorized
+caller's payload is never buffered or parsed.
+
 ## KVM Bridge MCP server
 
 `curtain_bridge.mcp_server` hosts an MCP (Model Context Protocol) server
@@ -235,7 +272,8 @@ This is a **separate process** from the `curtain-bridge` daemon above, not a
 the lifetime of one client connection and is spawned per-connection by the
 MCP client itself, the standard deployment shape for a stdio MCP server. It
 introduces zero new network exposure: stdio has no network surface at all,
-narrower than `health.py`'s and `crash_relay.py`'s loopback-bound HTTP
+narrower than `health.py`'s and `crash_relay.py`'s LAN-reachable (`0.0.0.0`-bound,
+shared-secret-authenticated — see "Health endpoint" above) HTTP
 listeners. It reads the same config JSON as `curtain-bridge` (`tinypilot_host`
 plus the new optional `relay_url` key) — one config file, one source of
 truth for both processes.
