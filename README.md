@@ -19,7 +19,7 @@ Your laptop and the desk share one login session, so a window that blocks input 
 
 ## Install
 
-1. Download `Curtain-1.0.0.dmg` from the [Releases](../../releases) page.
+1. Download `Curtain-2.0.0.dmg` from the [Releases](../../releases) page.
 2. Open the DMG and drag `Curtain.app` to Applications.
 3. Launch Curtain. First launch walks you through granting Accessibility, setting an optional password, and installing an optional disconnect helper.
 
@@ -40,7 +40,7 @@ This is the expected, correct step for a source build without a Developer ID, no
 Either way, verify the DMG against its published SHA-256 before installing (the `.sha256` file is attached to the release):
 
 ```bash
-shasum -a 256 Curtain-1.0.0.dmg
+shasum -a 256 Curtain-2.0.0.dmg
 ```
 
 The checksum confirms the file you downloaded is byte-for-byte what was published; it protects against a corrupted download or a tampered mirror. It says nothing about whether Apple has scanned or signed the binary. Notarization is a separate, independent guarantee. When a notarized release is available, do both: check the SHA-256 and rely on Gatekeeper's notarization check. An ad-hoc build only has the checksum guarantee.
