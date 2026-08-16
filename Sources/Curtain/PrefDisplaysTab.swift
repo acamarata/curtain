@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CurtainCore
 
 /// Purpose: Displays tab — per-display Cover/DisplayLink toggles, cover-scope picker,
 ///          password-box placement picker (with specific-display sub-picker), new-display
@@ -25,7 +26,7 @@ struct PrefDisplaysTab: View {
     let displayRefresh: Int
     let identifyDisplays: () -> Void
     let markDisplayLink: () -> Void
-    let onMarkDisplayLink: () -> Void   // called after markDisplayLink so parent can bump refresh
+    let onMarkDisplayLink: () -> Void  // called after markDisplayLink so parent can bump refresh
 
     var body: some View {
         Form {
@@ -47,8 +48,10 @@ struct PrefDisplaysTab: View {
                     Text("All displays").tag("all")
                     Text("Per-display Cover toggles").tag("perDisplay")
                 }
-                Text("In per-display mode each display's Cover toggle decides; new displays follow the new-display policy below. All displays is the fail-safe default.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "In per-display mode each display's Cover toggle decides; new displays follow the new-display policy below. All displays is the fail-safe default."
+                )
+                .font(.caption).foregroundStyle(.secondary)
 
                 Picker("Password box placement", selection: $passwordBoxPlacement) {
                     Text("Primary display").tag("primary")
@@ -110,11 +113,25 @@ struct PrefDisplaysTab: View {
                 Settings.displayLinkUUIDs = list
             }
         )
+        // KVM-excluded (T-P1-E13-01): permanently skips cover-window creation for
+        // this display identity, distinct from both Cover (native, sharingType
+        // .none) and DisplayLink (sharingType .readOnly) — see shouldCover()'s
+        // doc comment in CurtainController.swift.
+        let kvmExcluded = Binding<Bool>(
+            get: { uuid.map { Settings.kvmExcludedDisplayUUIDs.contains($0) } ?? false },
+            set: { newValue in
+                guard let u = uuid else { return }
+                var list = Settings.kvmExcludedDisplayUUIDs
+                if newValue { if !list.contains(u) { list.append(u) } } else { list.removeAll { $0 == u } }
+                Settings.kvmExcludedDisplayUUIDs = list
+            }
+        )
         return VStack(alignment: .leading, spacing: 4) {
             Text("Display \(index) · \(res) · \(shortID)").font(.caption).bold()
             HStack {
                 Toggle("Cover", isOn: cover)
                 Toggle("DisplayLink", isOn: displayLink)
+                Toggle("KVM display — never cover", isOn: kvmExcluded)
             }
         }
     }
@@ -132,7 +149,8 @@ struct PrefDisplaysTab: View {
             let short = String(u.prefix(8))
             return (uuid: u, label: "Display \(idx) · \(res) · \(short)")
         }
-        let storedIsOrphan = !passwordBoxSpecificUUID.isEmpty
+        let storedIsOrphan =
+            !passwordBoxSpecificUUID.isEmpty
             && !connectedUUIDs.contains(where: { $0.uuid == passwordBoxSpecificUUID })
 
         return Picker("Specific display", selection: $passwordBoxSpecificUUID) {

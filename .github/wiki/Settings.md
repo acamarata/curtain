@@ -36,6 +36,12 @@ Same as Activate Now, but automatically deactivates after 10 seconds. A quick vi
 
 Pressing **Control + Option + Command + U** at any time force-deactivates the curtain. It is registered as a Carbon hotkey, so it works even when Accessibility has not been granted. This is the guaranteed way to drop the cover from the desk.
 
+### Force Deactivate (Emergency) — accessible equivalent
+
+The menu bar also has a **Force Deactivate (Emergency)** item, reachable via VoiceOver or keyboard-only menu navigation without performing the four-key hotkey combo. It performs the identical unconditional force-deactivate as the hotkey — unlike the regular **Deactivate** item, it is never blocked by "Require password to deactivate from the menu," even while the cover is active. It exists because the hotkey combo has no on-screen affordance and can't be discovered or physically performed by all users.
+
+One caveat: the hotkey itself needs no Accessibility permission to fire, but VoiceOver, Switch Control, and keyboard-only menu navigation themselves require Accessibility trust to operate on macOS. So this menu item is a secondary, best-effort escape for assistive-technology users — not a full guarantee-parity replacement for the hotkey in an environment with zero Accessibility trust granted anywhere.
+
 ### Reset to Defaults
 
 Restores every setting on every tab to its shipped default. Your password is not changed by this.
@@ -205,9 +211,15 @@ Type a new password and click **Set**. The password is stored as a salted PBKDF2
 
 If no password has been set, the default password `curtain` is accepted. The window shows your current state ("A password is set." or "No password set (default: 'curtain')."). The `curtain` fallback always works regardless of any custom password.
 
----
+### Accessible unlock (VoiceOver / Switch Control)
 
-## Disconnect
+The on-curtain password box is a real accessibility element: VoiceOver announces the prompt, the masked password field (as a character count, never the plaintext), and any wrong-password or lockout message as it changes, with no setup needed.
+
+Typing the password itself normally arrives only through a physical keystroke, deliberately kept outside the normal window focus system so the cover never steals focus from a remote session. This does not work for VoiceOver's or Switch Control's synthesized input, so while either is running, Curtain also shows a genuine, focusable password field the moment the unlock box is revealed. Voice Control is not separately detected — its dictation is delivered as ordinary keystrokes, which the physical path already accepts, and which this field also accepts once VoiceOver or Switch Control has made it appear.
+
+This is a deliberate, narrow exception: while that field is visible, the window it lives in can briefly become key, so anything able to reach it — someone at the desk, or (if one is active) a connected remote session — can type into it, the same way it could type into any other focused system field. It disappears the moment the box hides, locks out, or VoiceOver/Switch Control stop running, and every attempt is still checked against the same password and lockout rules as the physical path, with no separate limit.
+
+VoiceOver support extends beyond the password box itself: the menu-bar status item announces its current armed/active state (not just a visual icon change), and the on-curtain "Desk input not blocked" warning banner — shown when physical input has stopped being intercepted — is actively announced the moment it appears, not just shown visually, so a VoiceOver user is told about that safety-relevant state change without needing to already be focused on it. Decorative lock glyphs on the cover no longer read as a raw emoji description.
 
 ### Enable disconnect-remote-on-end
 
@@ -282,6 +294,64 @@ Re-runs the first-run onboarding flow (permission checks, display marking, passw
 
 Shows the running version of Curtain.
 
+### MCP server (opt-in, off by default)
+
+Curtain can host a local, loopback-only MCP (Model Context Protocol) server exposing exactly one read-only tool, `curtain_status`. It returns whether Curtain is armed, whether a remote session is currently active, and the timestamp of the last SessionMonitor heartbeat — nothing else. There is no way to arm, disarm, change the password, change the cover appearance, or mutate any other setting through this surface, by design: the tool accepts no parameters, and its implementation never calls a setter.
+
+The server only starts when the `mcpServer.enabled` setting is explicitly true (UserDefaults key, default `false`). As of T-P1-E14-03, a toggle for this lives in the new [KVM section](#kvm-hidden-by-default) below, alongside the KVM Bridge controls. You can still flip it manually if you prefer:
+
+```bash
+defaults write io.acamarata.curtain mcpServer.enabled -bool true
+```
+
+...then relaunch Curtain. To disable again:
+
+```bash
+defaults write io.acamarata.curtain mcpServer.enabled -bool false
+```
+
+When enabled, the server listens on an OS-assigned ephemeral port bound strictly to `127.0.0.1` (never a LAN or VPN-facing interface) and speaks minimal JSON-RPC 2.0 over HTTP (`initialize`, `tools/list`, `tools/call`) — just enough of the MCP protocol for a real MCP client to discover and call `curtain_status`. This is explicitly not a general "let an agent see or control the screen" mechanism: no screenshot, input, or remote-control tool exists or is planned on this surface. It exists for exactly one situation — checking Curtain's protection state from local tooling when the Mac itself is otherwise unreachable — and does not generalize beyond that.
+
+Default: **off**.
+
+### KVM Bridge MCP server (Pi-side, separate from the Mac-side server above)
+
+If you have set up the optional [KVM Bridge](https://github.com/acamarata/curtain/blob/main/Bridge/README.md) (a Raspberry Pi running TinyPilot, entirely separate hardware from the Mac Curtain protects), that Bridge can host its own, second MCP server — `curtain-bridge-mcp` — exposing exactly three tools: `curtain_kvm_screenshot`, `curtain_kvm_type`, and `curtain_kvm_power`. This is the higher-risk of the two MCP surfaces, because it is reachable precisely when the Mac's own login/FileVault/app-UI safeguards are bypassed — so it carries the same hard boundary as the Mac-side server, verified with a more exhaustive adversarial test suite: **neither MCP surface can ever arm, disarm, change the password, change the cover appearance, or mutate any Curtain setting.** The Bridge process runs on entirely separate hardware from Curtain.app, in a separate OS process, with zero shared memory, IPC channel, or callback of any kind back to the Mac's Settings or SessionCoordinator state.
+
+- `curtain_kvm_screenshot` — wraps the Bridge's existing TinyPilot screenshot client; returns the current KVM video frame as base64 JPEG, or a `no_signal` status if the target has no video output.
+- `curtain_kvm_type` — a generic HID-typing tool. It types exactly the literal text the caller supplies, one keystroke per character, via the same TinyPilot keystroke-injection endpoint the Bridge's other modules use. It has no access to, and no code path to, any password Curtain stores, and is entirely separate from the human-confirmed Telegram unlock flow the Bridge also runs — the two never call into each other.
+- `curtain_kvm_power` — power-cycles the KVM target machine via a Tasmota-compatible smart-plug relay's local HTTP API (`http://<relay-ip>/cm?cmnd=Power...`), if you have one wired up and its URL set in the Bridge's config (`relay_url`). Without a configured or reachable relay, this tool fails explicitly with an error — it never reports a fake success.
+
+This server runs over stdio, spawned per-connection by whatever MCP client you point at it on the Pi — it introduces no new network listener beyond what the Bridge's other endpoints already use. It is a separate, opt-in deployment step from the Bridge daemon itself; most Curtain users, who do not own KVM hardware, never install or run it.
+
+---
+
+## KVM (hidden by default)
+
+Unlike every other section above, **KVM does not appear in the Preferences sidebar at all** until you opt in — this section is genuinely absent, not merely defaulted off, so the vast majority of users who do not own TinyPilot KVM hardware never see it. It exists purely so a KVM Bridge owner has one landing spot for every related control, instead of hunting across Advanced, Displays, and Security.
+
+### Revealing the section
+
+Open **Preferences → Advanced** and click **Set Up KVM Bridge…**. This does two things at once: it flips the hidden `kvmSection.enabled` setting on (so **KVM** now appears in the sidebar, on every future launch too) and opens the setup wizard. There is no separate "enable this section" switch — using the wizard is the only documented way in, matching the "irrelevant unless you own the hardware" framing on the button itself.
+
+### Set Up KVM Bridge…
+
+Opens the same setup wizard as the Advanced tab's button — deploys the [KVM Bridge](https://github.com/acamarata/curtain/blob/main/Bridge/README.md) package to a TinyPilot Pi over SSH, verifies it with a health check, and (optionally) walks through creating a Telegram bot for login-after-reboot. Shows a status line (**Deployed to `<host>`** / **Not yet deployed**) read from the last successful deploy.
+
+### Login after Reboot via Telegram
+
+This row is a **status readout, not a toggle** — and deliberately so. The Telegram bot token is captured once in the setup wizard's Telegram step and piped straight over SSH to the Bridge Pi's own config file; it is never written anywhere on the Mac (see the MCP section above and `KVMBridgeDeployer.sendTelegramToken`'s doc comment in the source for the exact mechanism). Because there is no Mac-side state to actually flip, there is no Mac-side switch — only a status line (**Configured** / **Not yet configured**) and a link back into the wizard's Telegram step to set it up or change it.
+
+### Curtain for KVM Sessions
+
+A disclosure switch — itself not persisted — that reveals the same per-display "never cover" list already on the [Displays](#displays) tab, for discoverability. Toggling a display here writes to the exact same setting as the Displays tab's **KVM display — never cover** control; there is no second, competing setting. A display marked this way never receives a cover window at all, distinct from the ordinary Cover/DisplayLink toggles above.
+
+### Enable local status server (MCP)
+
+The same `mcpServer.enabled` toggle documented under [Advanced → MCP server](#mcp-server-opt-in-off-by-default) above, surfaced here too since it is part of the KVM-adjacent automation story. Read-only: cannot arm, disarm, or change any Curtain setting, including this one.
+
+Default: **off**.
+
 ---
 
 ## Safe first-run defaults
@@ -295,6 +365,8 @@ Curtain ships configured to fail safe:
 - The `curtain` fallback password always works, so you can always drop the cover at the desk.
 - The Control + Option + Command + U emergency hotkey force-deactivates the curtain even without Accessibility.
 - Disconnect-remote-on-end is off, so no privileged helper is installed until you opt in.
+- The local MCP server is off, so no new local network listener exists until you explicitly enable `mcpServer.enabled`.
+- The KVM section is hidden from Preferences entirely until you open the setup wizard, so it adds zero surface area for the vast majority of users who do not own KVM hardware.
 - Without Accessibility, Curtain never shows the cover and notifies you instead, rather than putting up a screen it cannot unlock.
 
 ## Dangerous-combination warnings

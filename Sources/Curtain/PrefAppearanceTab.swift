@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CurtainShared
+import CurtainCore
 
 /// Purpose: Appearance tab — cover style, color, message, clock, and reveal trigger.
 ///          Extracted from PreferencesView to keep every tab file under 500 lines.
@@ -30,8 +31,10 @@ struct PrefAppearanceTab: View {
                     Text("Aerial video").tag("aerial")
                 }
                 if coverStyle == "aerial" {
-                    Text("Plays a system aerial video on the covered screens (muted, looping). A keypress still brings up the password. Falls back to the logo if no aerial video is installed. Uses more power than a static cover.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(
+                        "Plays a system aerial video on the covered screens (muted, looping). A keypress still brings up the password. Falls back to the logo if no aerial video is installed. Uses more power than a static cover."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
                 }
                 ColorPicker("Cover color", selection: colorBinding, supportsOpacity: false)
                 if coverStyle == "message" {

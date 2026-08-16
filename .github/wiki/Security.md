@@ -22,16 +22,23 @@ If you never set a password, the default is `curtain`. That default exists so yo
 
 ## Emergency unlock and no-Accessibility safety
 
-Two design choices make sure you can never be trapped behind the curtain:
+Three design choices make sure you can never be trapped behind the curtain, and never silently unprotected while it looks active:
 
 - **Emergency hotkey.** Pressing **Control + Option + Command + U** at the desk force-deactivates the curtain. It is registered as a Carbon hotkey, so it fires even when Accessibility has not been granted. This is the guaranteed escape regardless of state.
 - **No cover without Accessibility.** The input block depends on the Accessibility grant. If Accessibility is not granted, Curtain refuses to show the cover at all and notifies you, rather than putting up a screen it cannot unlock. You get a passive, clearly flagged state instead of a locked-out one.
+- **Mid-session revocation is caught, not silent.** The two checks above only run at activation time. If Accessibility is revoked while a cover is already up, either by direct user action in System Settings or by ad-hoc-signing instability before notarization, the checks above alone would leave the cover visually up while the desk was silently unblocked. Curtain closes that gap: `SessionCoordinator` re-verifies `AXIsProcessTrusted()` every tick (about once a second) while a session is active. The check is edge-triggered, so it only acts on an actual change. The moment revocation is detected, Curtain logs it and shows the same warning banner already used for the not-granted case ("Desk input not blocked — grant Accessibility in System Settings"), directly on the cover. Re-granting Accessibility clears the banner on the next tick. "Curtain is protecting me" stays either true, or loudly and visibly false, for the whole session, not just at the moment it started.
 
 ## The optional disconnect helper
 
 Ending the remote Screen Sharing session from the Mac side needs elevated rights. This is **off by default**, and most people never turn it on or see an admin prompt.
 
 When you enable it, Curtain installs a privileged helper. On a notarized or Developer-ID build it registers a daemon through `SMAppService.daemon`, the current Apple API for this. The app talks to the helper over XPC, and the helper checks the caller's code signature before doing anything. On a local ad-hoc or dev build, which cannot register an `SMAppService` daemon, Curtain falls back to a small privileged helper installed with one admin prompt, scoped to the current user. A public notarized build never installs a sudoers rule. The older approach of dropping a NOPASSWD entry into sudoers for everyone is gone.
+
+The helper resolves each connecting caller's identity from the XPC connection's kernel-issued audit token (not the process ID), so the check is bound to the exact peer that opened the connection rather than a PID that could, in principle, be reused by a different process between being reported and being checked. On a signed build the caller's Team ID must match the helper's; on an unsigned ad-hoc/dev build there is no Team ID to check against, so the helper falls back to identifier-and-anchor validation only and logs that relaxation loudly. That ad-hoc fallback is a known, accepted soft spot until Developer-ID signing ships.
+
+When the helper ends a Screen Sharing session, it does not match target processes by scanning command-line text. It enumerates every running process, resolves each one's real executable path, and only signals a process whose path is an exact match for one of the fixed system locations of the screen-sharing session binaries — an attacker-named-alike process cannot be caught by, or dodge, a broad text pattern this way, because none of its command-line arguments are ever inspected.
+
+The one-time admin prompt itself runs the requested command through `osascript` with a fixed, static `on run argv` script, passing the command as a plain process argument rather than splicing it into the AppleScript source text. The command string is never parsed as AppleScript, so there is no AppleScript-string-escaping step that a future change could get subtly wrong. Today, the only values that path ever runs are fixed install/remove commands built from constant paths and base64-encoded content — nothing user-controlled reaches it.
 
 ## Private API for locking
 
@@ -45,7 +52,7 @@ The activation trigger is deliberately narrow. Curtain raises the cover only whe
 
 ## Distribution trust
 
-Version 1.0 ships ad-hoc signed from GitHub Releases. Verify the published SHA-256 of the `.dmg` against what you downloaded before you install. Notarized Developer-ID builds are planned. Until those land, macOS Gatekeeper will quarantine the download, so a one-time quarantine strip is required (see Installation).
+`Scripts/release.sh` supports two build paths. Without signing credentials set (`SIGN_IDENTITY` and the notary environment variables), it produces the same ad-hoc-signed build as before: verify the published SHA-256 of the `.dmg` against what you downloaded, then strip the quarantine flag once (see Installation). With `CURTAIN_TEAM_ID`, `CURTAIN_NOTARY_PROFILE`, and the notary credentials set, it produces a Developer-ID-signed, notarized build instead — Gatekeeper accepts that build directly, no quarantine strip needed. Version 1.0.0 itself still ships ad-hoc from GitHub Releases; the notarized path is wired and tested but has not yet produced a published release. Either way, the SHA-256 check and the notarization check are independent guarantees and neither substitutes for the other — see the README's Install section for the exact wording.
 
 ## Multi-display behavior
 

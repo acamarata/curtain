@@ -1,0 +1,37 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  release:
+    # Needs a Swift 6 toolchain, same requirement as build.yml. Notarytool
+    # submissions can take several minutes; GitHub's default 360-minute job
+    # timeout is more than sufficient and is intentionally left untightened.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Run release pipeline
+        # Scripts/release.sh is env-var-gated (T-P1-E02-01): with these unset it
+        # produces an ad-hoc/unnotarized build and a loud warning instead of
+        # failing. Real values are supplied via repository secrets only — never
+        # hardcoded, never echoed to logs.
+        env:
+          SIGN_IDENTITY: ${{ secrets.CURTAIN_SIGN_IDENTITY }}
+          CURTAIN_TEAM_ID: ${{ secrets.CURTAIN_TEAM_ID }}
+          CURTAIN_NOTARY_PROFILE: ${{ secrets.CURTAIN_NOTARY_PROFILE }}
+          CURTAIN_NOTARY_APPLE_ID: ${{ secrets.CURTAIN_NOTARY_APPLE_ID }}
+          CURTAIN_NOTARY_APP_PASSWORD: ${{ secrets.CURTAIN_NOTARY_APP_PASSWORD }}
+        run: ./Scripts/release.sh
+      - name: Upload release artifact
+        # Uploads the .dmg + .sha256 as a CI build artifact only. Deliberately
+        # no `gh release create` here — publishing a public GitHub Release is a
+        # separate, reviewed, manual step (see README.md "Release process").
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: curtain-release-${{ github.ref_name }}
+          path: |
+            dist/Curtain-*.dmg
+            dist/Curtain-*.dmg.sha256

@@ -26,10 +26,10 @@ final class HexColorTests: XCTestCase {
     }
 
     func testRejectsMalformed() {
-        XCTAssertNil(HexColor.toRGB("#12345"))    // too short
+        XCTAssertNil(HexColor.toRGB("#12345"))  // too short
         XCTAssertNil(HexColor.toRGB("#1234567"))  // too long
-        XCTAssertNil(HexColor.toRGB("#gggggg"))   // non-hex
-        XCTAssertNil(HexColor.toRGB(""))          // empty
+        XCTAssertNil(HexColor.toRGB("#gggggg"))  // non-hex
+        XCTAssertNil(HexColor.toRGB(""))  // empty
     }
 
     func testFromRGBClamps() {

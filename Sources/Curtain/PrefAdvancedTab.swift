@@ -1,4 +1,5 @@
 import SwiftUI
+import CurtainCore
 
 /// Purpose: Advanced tab — diagnostics toggle, re-open onboarding, settings export /
 ///          import / reset, and version footer.
@@ -15,6 +16,7 @@ struct PrefAdvancedTab: View {
     @AppStorage(Settings.Key.diagnosticsLoggingEnabled) private var diagnosticsLogging = false
 
     let openOnboarding: () -> Void
+    let openKVMBridgeSetup: () -> Void
     let exportSettings: () -> Void
     let importSettings: () -> Void
     let resetToDefaults: () -> Void
@@ -26,6 +28,8 @@ struct PrefAdvancedTab: View {
             }
             Section("Setup") {
                 Button("Open Setup…", action: openOnboarding)
+                Button("Set Up KVM Bridge…", action: openKVMBridgeSetup)
+                    .help("Opt-in: deploys the KVM automation bridge to a TinyPilot Pi over SSH. Irrelevant unless you own TinyPilot hardware.")
             }
             Section("Settings file") {
                 HStack {

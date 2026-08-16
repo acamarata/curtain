@@ -6,9 +6,10 @@
 # drag-to-Applications .dmg with a checksum.
 #
 # Default signing is ad-hoc ("-"), which ships today without an Apple Developer
-# account. The notarization swap is a single guarded block near the signing
-# step: set SIGN_IDENTITY to your Developer ID and uncomment the notarytool
-# lines to graduate to a fully notarized build.
+# account. Notarization is env-var-gated: set SIGN_IDENTITY to your Developer ID
+# plus a notary credential source (CURTAIN_NOTARY_PROFILE, or
+# CURTAIN_NOTARY_APPLE_ID+CURTAIN_TEAM_ID+CURTAIN_NOTARY_APP_PASSWORD) to
+# graduate to a fully notarized build. No script edits required.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,6 +26,17 @@ ENTITLEMENTS="$REPO/curtain.entitlements"
 # Signing identity. "-" = ad-hoc (ships now). Override with a Developer ID for
 # notarized builds, e.g. SIGN_IDENTITY="Developer ID Application: Aric Camarata (TEAMID)".
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+
+# Notarization credentials (only consulted when SIGN_IDENTITY is a real Developer
+# ID, i.e. not unset and not "-"). Either set CURTAIN_NOTARY_PROFILE to a
+# notarytool keychain profile name (created once via `xcrun notarytool
+# store-credentials`), or set all three of CURTAIN_NOTARY_APPLE_ID,
+# CURTAIN_TEAM_ID, and CURTAIN_NOTARY_APP_PASSWORD. Real values are supplied by
+# the maintainer's environment, never hardcoded here.
+CURTAIN_TEAM_ID="${CURTAIN_TEAM_ID:-}"
+CURTAIN_NOTARY_PROFILE="${CURTAIN_NOTARY_PROFILE:-}"
+CURTAIN_NOTARY_APPLE_ID="${CURTAIN_NOTARY_APPLE_ID:-}"
+CURTAIN_NOTARY_APP_PASSWORD="${CURTAIN_NOTARY_APP_PASSWORD:-}"
 
 BUILD_DIR="$REPO/.build/release"
 DIST="$REPO/dist"
@@ -47,7 +59,8 @@ echo "==> Assembling Curtain.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" \
          "$APP/Contents/Resources" \
-         "$APP/Contents/Library/LaunchDaemons"
+         "$APP/Contents/Library/LaunchDaemons" \
+         "$APP/Contents/Library/LaunchAgents"
 
 cp "$CURTAIN_BIN" "$APP/Contents/MacOS/Curtain"
 cp "$HELPER_BIN"  "$APP/Contents/MacOS/CurtainHelper"
@@ -71,6 +84,40 @@ cat > "$APP/Contents/Library/LaunchDaemons/$HELPER_LABEL.plist" <<PLIST
     <key>$HELPER_LABEL</key>
     <true/>
   </dict>
+  <key>AssociatedBundleIdentifiers</key>
+  <array>
+    <string>$APP_ID</string>
+  </array>
+</dict>
+</plist>
+PLIST
+
+# Main-app crash-relaunch supervision (T-P1-E08-03). SMAppService.agent(plistName:)
+# loads this from Contents/Library/LaunchAgents. KeepAlive.SuccessfulExit=false
+# tells launchd to relaunch Curtain ONLY after an abnormal exit (non-zero exit
+# status, or death by signal) — a clean `NSApp.terminate` (exit 0) does not
+# trigger a relaunch. RunAtLoad is deliberately omitted: launch-at-login remains
+# solely LoginItem.swift's job via SMAppService.mainApp; this agent's only job is
+# crash supervision of an already-running process, so it must never itself start
+# the app at registration/login time (that would double-launch alongside
+# LoginItem). See AppSupervisor.swift for the registration call and the
+# SMAppService.agent-vs-companion-supervisor decision writeup.
+cat > "$APP/Contents/Library/LaunchAgents/$APP_ID.supervisor.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$APP_ID.supervisor</string>
+  <key>BundleProgram</key>
+  <string>Contents/MacOS/Curtain</string>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ProcessType</key>
+  <string>Interactive</string>
   <key>AssociatedBundleIdentifiers</key>
   <array>
     <string>$APP_ID</string>
@@ -139,23 +186,36 @@ codesign --force --options runtime --timestamp \
 [[ ${PIPESTATUS[0]} -eq 0 ]] || { echo "ERROR: codesign failed (app bundle)"; exit 1; }
 
 # === NOTARIZATION SWAP (when enrolled in the Apple Developer Program) =========
-# To graduate to a notarized build:
-#   1. Set the identity at invocation:
-#        SIGN_IDENTITY="Developer ID Application: Aric Camarata (TEAMID)" ./Scripts/release.sh
-#      (the codesign block above already uses $SIGN_IDENTITY and the entitlements
-#      file, so no other signing change is needed).
-#   2. Uncomment the submit + staple lines below. notarytool needs a stored
-#      keychain profile created once with:
-#        xcrun notarytool store-credentials curtain-notary \
-#          --apple-id "you@example.com" --team-id "TEAMID" --password "<app-specific-pw>"
-#
-# NOTARY_PROFILE="curtain-notary"
-# NOTARIZE_ZIP="$DIST/Curtain-$VERSION-notarize.zip"
-# echo "==> Notarizing"
-# ditto -c -k --keepParent "$APP" "$NOTARIZE_ZIP"
-# xcrun notarytool submit "$NOTARIZE_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
-# xcrun stapler staple "$APP"
-# rm -f "$NOTARIZE_ZIP"
+# Selected purely by which environment variables are set:
+#   - SIGN_IDENTITY unset or "-": ad-hoc build (today's default), no notarization.
+#   - SIGN_IDENTITY set to a real Developer ID: requires a notary credential
+#     source too (CURTAIN_NOTARY_PROFILE, or the Apple-ID/team-ID/app-password
+#     triple). A real identity with no credential source is a half-configured
+#     state and fails loudly rather than silently shipping an ad-hoc build under
+#     a real signing identity.
+if [[ -z "$SIGN_IDENTITY" || "$SIGN_IDENTITY" == "-" ]]; then
+  echo "==> WARNING: ad-hoc/unnotarized build. Set SIGN_IDENTITY plus notary credentials (CURTAIN_NOTARY_PROFILE, or CURTAIN_NOTARY_APPLE_ID+CURTAIN_TEAM_ID+CURTAIN_NOTARY_APP_PASSWORD) to produce a notarized release."
+else
+  NOTARY_AUTH_ARGS=()
+  if [[ -n "$CURTAIN_NOTARY_PROFILE" ]]; then
+    NOTARY_AUTH_ARGS=(--keychain-profile "$CURTAIN_NOTARY_PROFILE")
+  elif [[ -n "$CURTAIN_NOTARY_APPLE_ID" && -n "$CURTAIN_TEAM_ID" && -n "$CURTAIN_NOTARY_APP_PASSWORD" ]]; then
+    NOTARY_AUTH_ARGS=(--apple-id "$CURTAIN_NOTARY_APPLE_ID" --team-id "$CURTAIN_TEAM_ID" --password "$CURTAIN_NOTARY_APP_PASSWORD")
+  else
+    echo "ERROR: SIGN_IDENTITY is set to a real Developer ID but no notary credential source is configured."
+    echo "       Set CURTAIN_NOTARY_PROFILE (a notarytool keychain profile name), or set all three of"
+    echo "       CURTAIN_NOTARY_APPLE_ID, CURTAIN_TEAM_ID, and CURTAIN_NOTARY_APP_PASSWORD."
+    echo "       Refusing to ship a real-identity build without notarization (half-configured is worse than ad-hoc)."
+    exit 1
+  fi
+
+  NOTARIZE_ZIP="$DIST/Curtain-$VERSION-notarize.zip"
+  echo "==> Notarizing"
+  ditto -c -k --keepParent "$APP" "$NOTARIZE_ZIP"
+  xcrun notarytool submit "$NOTARIZE_ZIP" "${NOTARY_AUTH_ARGS[@]}" --wait
+  xcrun stapler staple "$APP"
+  rm -f "$NOTARIZE_ZIP"
+fi
 # ==============================================================================
 
 # --- d. Package the .dmg (drag-to-Applications layout) -----------------------

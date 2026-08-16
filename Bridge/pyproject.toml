@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "curtain-bridge"
+version = "0.1.0"
+description = "KVM automation bridge that runs on a Raspberry Pi (TinyPilot) independent of the protected Mac, giving Curtain's dogfood track a network-independent remote-recovery path."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Aric Camarata" }]
+keywords = ["curtain", "kvm", "tinypilot", "raspberry-pi", "automation"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+  "httpx>=0.27,<1.0",
+  "opencv-python-headless>=4.9,<5.0",
+  "numpy>=1.26,<3.0",
+  "Pillow>=10.0,<13.0",
+  "mcp>=1.28,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+curtain-bridge = "curtain_bridge.service:main"
+curtain-bridge-mcp = "curtain_bridge.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/acamarata/curtain"
+
+[tool.hatch.build.targets.wheel]
+packages = ["curtain_bridge"]
+# Reference template PNGs under curtain_bridge/fixtures/templates/ are a
+# runtime dependency of detection.py (loaded via importlib.resources), not
+# test-only assets -- hatchling includes non-.py files under a listed
+# package by default, but this is left explicit since it's easy to
+# accidentally exclude binary assets in a future build-config change.
+artifacts = ["curtain_bridge/fixtures/templates/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# The `mcp` SDK's FastMCP.__init__ (as of mcp==1.29.0) triggers a pydantic_settings
+# IncompleteFieldDefinitionWarning on every construction, from an unresolved forward
+# reference on FastMCP.Settings' own `lifespan` field -- an upstream defect in the
+# mcp package itself (verified: reproduces via `python3 -W error -c "from
+# mcp.server.fastmcp import FastMCP; FastMCP('x')"` with zero curtain_bridge code
+# involved), not anything curtain-bridge's code triggers or can fix. Filtered by
+# exact category+message rather than a blanket ignore, so any *other* warning still
+# fails the suite per this project's zero-warnings CI standard.
+filterwarnings = [
+  "ignore:Field 'lifespan' has an incomplete definition.*:UserWarning:pydantic_settings",
+]

@@ -1,4 +1,5 @@
 import Cocoa
+import CurtainCore
 
 // Curtain — a privacy curtain for macOS Screen Sharing.
 // Normally launches as a background menu-bar agent (no Dock icon).
@@ -7,9 +8,10 @@ import Cocoa
 // install.sh can build AppIcon.icns without shipping any image assets.
 
 if CommandLine.arguments.contains("--render-icon"),
-   let dirIndex = CommandLine.arguments.firstIndex(of: "--render-icon"),
-   CommandLine.arguments.indices.contains(dirIndex + 1) {
-    CurtainIcon.exportIconset(to: CommandLine.arguments[dirIndex + 1])   // offscreen bitmap render
+    let dirIndex = CommandLine.arguments.firstIndex(of: "--render-icon"),
+    CommandLine.arguments.indices.contains(dirIndex + 1)
+{
+    CurtainIcon.exportIconset(to: CommandLine.arguments[dirIndex + 1])  // offscreen bitmap render
     exit(0)
 }
 
@@ -21,7 +23,7 @@ MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate
-    app.setActivationPolicy(.accessory)     // background agent; settings window still shows
+    app.setActivationPolicy(.accessory)  // background agent; settings window still shows
 
     // SIGTERM (launchd stop / `kill`): a C signal handler can't safely touch AppKit, so
     // ignore the default action and route the signal through a DispatchSource on the main

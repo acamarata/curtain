@@ -21,7 +21,7 @@ public enum RevealCombo {
     /// Non-character keys we accept by name (keycode), since they carry no usable char.
     private static let namedKeycodes: [String: Int] = [
         "space": 49, "return": 36, "enter": 76, "tab": 48, "escape": 53, "esc": 53,
-        "delete": 51, "backspace": 51,
+        "delete": 51, "backspace": 51
     ]
 
     /// Returns true when the incoming key-down matches the configured combo.
@@ -41,11 +41,11 @@ public enum RevealCombo {
         var finalKey: String?
         for p in parts {
             switch p {
-            case "cmd", "command", "⌘":            required |= maskCommand
-            case "ctrl", "control", "⌃":           required |= maskControl
-            case "opt", "option", "alt", "⌥":      required |= maskAlternate
-            case "shift", "⇧":                     required |= maskShift
-            default:                                finalKey = p
+            case "cmd", "command", "⌘": required |= maskCommand
+            case "ctrl", "control", "⌃": required |= maskControl
+            case "opt", "option", "alt", "⌥": required |= maskAlternate
+            case "shift", "⇧": required |= maskShift
+            default: finalKey = p
             }
         }
         guard let key = finalKey else { return false }

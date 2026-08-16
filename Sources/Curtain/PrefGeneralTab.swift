@@ -1,4 +1,5 @@
 import SwiftUI
+import CurtainCore
 
 /// Purpose: General tab — master switch, login-item, menu-bar toggle, activation
 ///          timing, and manual test actions. Extracted from PreferencesView to keep

@@ -1,4 +1,5 @@
 import AppKit
+import CurtainCore
 import SwiftUI
 
 /// Purpose: First-run onboarding flow that walks a brand-new user from download
@@ -78,6 +79,8 @@ private struct OnboardingView: View {
     @State private var disconnectOn = false
     @State private var password = ""
     @State private var passwordSaved = false
+    @State private var passwordSaveFailed = false
+    @State private var showNoPasswordWarning = false
 
     private enum Step: Int { case welcome, accessibility, disconnect, password, finish }
 
@@ -109,11 +112,11 @@ private struct OnboardingView: View {
     @ViewBuilder
     private var content: some View {
         switch step {
-        case .welcome:       welcomeStep
+        case .welcome: welcomeStep
         case .accessibility: accessibilityStep
-        case .disconnect:    disconnectStep
-        case .password:      passwordStep
-        case .finish:        finishStep
+        case .disconnect: disconnectStep
+        case .password: passwordStep
+        case .finish: finishStep
         }
     }
 
@@ -123,8 +126,10 @@ private struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Hide your screen while you work remotely")
                 .font(.title3.weight(.semibold))
-            Text("Curtain covers your screen and blocks the keyboard and mouse at your desk while you remote in. It locks or sleeps the Mac when the session goes idle or disconnects.")
-                .foregroundStyle(.secondary)
+            Text(
+                "Curtain covers your screen and blocks the keyboard and mouse at your desk while you remote in. It locks or sleeps the Mac when the session goes idle or disconnects."
+            )
+            .foregroundStyle(.secondary)
             Spacer()
             HStack {
                 Spacer()
@@ -140,8 +145,10 @@ private struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Allow Curtain to block desk input")
                 .font(.title3.weight(.semibold))
-            Text("Curtain needs Accessibility permission so it can capture the keyboard and mouse at your desk. Without it, your screen can be covered but input is not blocked.")
-                .foregroundStyle(.secondary)
+            Text(
+                "Curtain needs Accessibility permission so it can capture the keyboard and mouse at your desk. Without it, your screen can be covered but input is not blocked."
+            )
+            .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
                 Circle()
@@ -181,9 +188,11 @@ private struct OnboardingView: View {
             Toggle(isOn: $disconnectOn) {
                 Text("Also disconnect the remote session on idle or end")
             }
-            Text("This needs a one-time admin approval to install a small helper. Most people do not need it. Curtain still locks or sleeps the Mac without it.")
-                .foregroundStyle(.secondary)
-                .font(.callout)
+            Text(
+                "This needs a one-time admin approval to install a small helper. Most people do not need it. Curtain still locks or sleeps the Mac without it."
+            )
+            .foregroundStyle(.secondary)
+            .font(.callout)
             Spacer()
             HStack {
                 Spacer()
@@ -202,15 +211,24 @@ private struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Set an unlock password (optional)")
                 .font(.title3.weight(.semibold))
-            Text("This password unlocks the screen at your desk. If you skip it, the default is \"curtain\" and you can change it later in Settings.")
-                .foregroundStyle(.secondary)
-                .font(.callout)
+            Text(
+                "This password unlocks the screen at your desk. If you skip it, the default is \"curtain\" and you can change it later in Settings."
+            )
+            .foregroundStyle(.secondary)
+            .font(.callout)
             HStack {
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
                 Button("Set") {
-                    Settings.setPassword(password)
-                    passwordSaved = true
+                    // Only report success when the Keychain write is confirmed —
+                    // a silent failure would leave the default "curtain" password
+                    // in place while the user believes they set their own.
+                    if Settings.setPassword(password) {
+                        passwordSaved = true
+                        passwordSaveFailed = false
+                    } else {
+                        passwordSaveFailed = true
+                    }
                 }
                 .disabled(password.isEmpty)
             }
@@ -218,14 +236,39 @@ private struct OnboardingView: View {
                 Text("Password set.")
                     .font(.callout)
                     .foregroundStyle(.green)
+            } else if passwordSaveFailed {
+                Text("Could not save the password to the Keychain. It was not set — try again.")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
             }
             Spacer()
             HStack {
-                Button("Skip") { step = .finish }
+                Button("Skip") { attemptAdvancePastPassword() }
                 Spacer()
-                Button("Continue") { step = .finish }
+                Button("Continue") { attemptAdvancePastPassword() }
                     .keyboardShortcut(.defaultAction)
             }
+        }
+        .alert("Continue without a password?", isPresented: $showNoPasswordWarning) {
+            Button("Go Back", role: .cancel) {}
+            Button("Continue Anyway", role: .destructive) { step = .finish }
+        } message: {
+            Text(
+                "Curtain will use the default password \"curtain\", which anyone can find in the documentation. You can set a real password later in Settings."
+            )
+        }
+    }
+
+    /// Gate for leaving `.password`: proceeds straight to `.finish` once a real
+    /// password is set (Settings.hasPassword), otherwise shows an explicit
+    /// confirmation alert rather than silently falling through to the documented
+    /// "curtain" fallback with no warning. Both Skip and Continue route through
+    /// this so neither button offers a silent no-password path.
+    private func attemptAdvancePastPassword() {
+        if Settings.hasPassword {
+            step = .finish
+        } else {
+            showNoPasswordWarning = true
         }
     }
 
@@ -235,8 +278,10 @@ private struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("You're all set")
                 .font(.title3.weight(.semibold))
-            Text("Curtain runs in the menu bar and starts at login. Open the menu bar icon any time to arm it or change settings.")
-                .foregroundStyle(.secondary)
+            Text(
+                "Curtain runs in the menu bar and starts at login. Open the menu bar icon any time to arm it or change settings."
+            )
+            .foregroundStyle(.secondary)
             Spacer()
             HStack {
                 Spacer()
@@ -264,7 +309,10 @@ private struct OnboardingView: View {
     private func openAXSettings() {
         // macOS 13+ Privacy pane URL; the legacy ?Privacy_Accessibility query-string form
         // stopped reliably opening the Accessibility row on Ventura+ and is dropped here.
-        let url = URL(string: "x-apple.systempreferences:com.apple.Privacy-Accessibility-Settings")!
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Privacy-Accessibility-Settings") else {
+            NSLog("Curtain: failed to construct Accessibility settings URL")
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 }

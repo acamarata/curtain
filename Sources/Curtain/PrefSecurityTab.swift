@@ -1,7 +1,9 @@
 import SwiftUI
+import CurtainCore
 
 /// Purpose: Security tab — unlock action, password-box timeout, require-password
-///          toggle, Accessibility behavior, and password change form.
+///          toggle, Accessibility behavior, optional KVM-activity notification
+///          toggle (T-P1-E13-03), and password change form.
 ///          Extracted from PreferencesView to keep every tab file under 500 lines.
 /// Inputs:  @AppStorage bindings for security prefs, plus a @Binding for the live
 ///          hasPassword state so the parent can refresh it after a reset.
@@ -15,8 +17,10 @@ struct PrefSecurityTab: View {
     @AppStorage(Settings.Key.passwordBoxTimeoutSeconds) private var passwordBoxTimeout = 15
     @AppStorage(Settings.Key.requirePasswordToDeactivateFromMenu) private var requirePasswordToDeactivate = false
     @AppStorage(Settings.Key.accessibilityMissingBehavior) private var accessibilityMissing = "warn"
+    @AppStorage(Settings.Key.kvmActivityNotificationEnabled) private var kvmActivityNotificationEnabled = false
 
     @State private var newPassword = ""
+    @State private var saveFailed = false
     @Binding var hasPassword: Bool
 
     var body: some View {
@@ -33,11 +37,15 @@ struct PrefSecurityTab: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if onUnlockAction == "disconnect" {
-                        Text("Disconnecting on unlock needs the disconnect helper enabled (see the Disconnect tab). Under an ad-hoc local build, enabling it installs a small privileged helper with one admin prompt.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text(
+                            "Disconnecting on unlock needs the disconnect helper enabled (see the Disconnect tab). Under an ad-hoc local build, enabling it installs a small privileged helper with one admin prompt."
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
                     }
                     if requirePasswordToDeactivate {
-                        warn("The fallback password \"curtain\" always works, so you can never be locked out of your own Mac.")
+                        warn(
+                            "The fallback password \"curtain\" always works, so you can never be locked out of your own Mac."
+                        )
                     }
                 }
             }
@@ -50,7 +58,22 @@ struct PrefSecurityTab: View {
                 Text("Accessibility")
             } footer: {
                 if accessibilityMissing == "refuseToArm" {
-                    warn("Curtain will not arm without Accessibility. Grant it in System Settings, or the curtain never engages.")
+                    warn(
+                        "Curtain will not arm without Accessibility. Grant it in System Settings, or the curtain never engages."
+                    )
+                }
+            }
+            Section {
+                Toggle("Notify when the KVM is actively in use", isOn: $kvmActivityNotificationEnabled)
+            } header: {
+                Text("KVM")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(
+                        "Optional and informational only — has no effect on which displays are covered. Off by default."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
+                    warn("Not yet active: KVM device pairing and detection are still being built.")
                 }
             }
             Section {
@@ -58,17 +81,29 @@ struct PrefSecurityTab: View {
                     SecureField("New unlock password", text: $newPassword)
                     Button("Set") {
                         if !newPassword.isEmpty {
-                            Settings.setPassword(newPassword)
-                            newPassword = ""
-                            hasPassword = Settings.hasPassword
+                            // Surface a Keychain write failure instead of clearing
+                            // the field and reporting success: a silent failure would
+                            // leave the previous (possibly "curtain") password in place
+                            // while the user believes they changed it.
+                            if Settings.setPassword(newPassword) {
+                                saveFailed = false
+                                newPassword = ""
+                                hasPassword = Settings.hasPassword
+                            } else {
+                                saveFailed = true
+                            }
                         }
                     }
                 }
             } header: {
                 Text("Password")
             } footer: {
-                Text(hasPassword ? "A password is set." : "No password set (default: \"curtain\").")
-                    .font(.caption).foregroundStyle(.secondary)
+                if saveFailed {
+                    warn("Could not save the password to the Keychain. It was NOT changed — try again.")
+                } else {
+                    Text(hasPassword ? "A password is set." : "No password set (default: \"curtain\").")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

@@ -1,0 +1,25 @@
+[Unit]
+Description=Curtain KVM Bridge (TinyPilot automation daemon)
+Documentation=https://github.com/acamarata/curtain/blob/main/Bridge/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pilot
+Group=pilot
+WorkingDirectory=/opt/curtain-bridge
+Environment=CURTAIN_BRIDGE_CONFIG=/etc/curtain-bridge/config.json
+Environment=CURTAIN_BRIDGE_LOG_LEVEL=INFO
+ExecStart=/opt/curtain-bridge/venv/bin/curtain-bridge
+Restart=on-failure
+RestartSec=5
+# Hardening (safe defaults for a single-purpose network daemon; loosen only
+# if a future module genuinely needs broader filesystem/device access).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/curtain-bridge
+
+[Install]
+WantedBy=multi-user.target

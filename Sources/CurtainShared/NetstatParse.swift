@@ -58,6 +58,12 @@ public enum NetstatParse {
 
     /// A foreign address is a real peer only when it names an actual remote
     /// host+port, not the `*.*` / `host.*` wildcard forms a listener shows.
+    ///
+    /// Reverified 2026-08-15 against real `/usr/sbin/netstat -an` output on this
+    /// machine (both `-p tcp` and `-p udp`, including LISTEN/idle UDP wildcard
+    /// rows): every wildcard foreign-address row observed used the dotted `*.*`
+    /// form. No bare `*` (without a dot) foreign-address format was ever seen, so
+    /// no functional change is needed here.
     private static func isRealPeer(_ foreign: String) -> Bool {
         foreign != "*.*" && !foreign.hasSuffix(".*")
     }

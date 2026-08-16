@@ -9,8 +9,60 @@ jobs:
     # (weak-self captures inside @MainActor Tasks) that Swift 5.10 rejects.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Cache SPM build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
       - name: Build (release)
         run: swift build -c release
       - name: Test
         run: swift test
+
+  lint:
+    # swift-format ships as a bundled `swift format` subcommand on the Swift 6
+    # toolchain (no brew install / version drift risk). Config: .swift-format
+    # at repo root, tuned to the project's actual style (4-space indent,
+    # 120-col) so this gate reflects a real style baseline rather than
+    # swift-format's 2-space/100-col defaults.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Lint (swift-format)
+        run: swift format lint --configuration .swift-format --recursive --strict Sources/ Tests/
+
+  coverage:
+    # Produces a downloadable coverage artifact (lcov + human-readable report).
+    # No threshold gate: E-05 (Test Coverage Foundation) is still landing
+    # tests, so this job proves the pipeline works without failing the build
+    # on a coverage number. Live Codecov upload is a fast-follow once
+    # CODECOV_TOKEN_CURTAIN exists (out of scope here).
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Cache SPM build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+      - name: Test with coverage
+        run: swift test --enable-code-coverage
+      - name: Generate coverage report
+        run: |
+          BIN_PATH="$(swift build --show-bin-path)"
+          PROFDATA="$BIN_PATH/codecov/default.profdata"
+          TEST_BINARY="$BIN_PATH/CurtainPackageTests.xctest/Contents/MacOS/CurtainPackageTests"
+          xcrun llvm-cov export -format="lcov" "$TEST_BINARY" -instr-profile "$PROFDATA" > coverage.lcov
+          xcrun llvm-cov report "$TEST_BINARY" -instr-profile "$PROFDATA" | tee coverage-report.txt
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: |
+            coverage.lcov
+            coverage-report.txt

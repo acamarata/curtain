@@ -26,3 +26,10 @@ DerivedData/
 
 # Release artifacts
 dist/
+
+# Python (Bridge/)
+Bridge/.venv/
+Bridge/**/__pycache__/
+Bridge/**/*.egg-info/
+Bridge/.pytest_cache/
+Bridge/**/*.pyc

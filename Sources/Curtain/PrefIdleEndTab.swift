@@ -1,4 +1,5 @@
 import SwiftUI
+import CurtainCore
 
 /// Purpose: Idle & End tab — idle-timeout block and on-disconnect block.
 ///          Extracted from PreferencesView to keep every tab file under 500 lines.
@@ -43,10 +44,14 @@ struct PrefIdleEndTab: View {
                 if idleEnabled {
                     VStack(alignment: .leading, spacing: 4) {
                         if idleMinutes <= 2 && idleDisconnect {
-                            warn("A very short idle timeout with disconnect-on-idle can cut a session during a brief pause.")
+                            warn(
+                                "A very short idle timeout with disconnect-on-idle can cut a session during a brief pause."
+                            )
                         }
                         if !idleDeactivate && idleScreenOff {
-                            warn("Screens go dark on idle but the curtain stays up. The desk shows nothing until you deactivate.")
+                            warn(
+                                "Screens go dark on idle but the curtain stays up. The desk shows nothing until you deactivate."
+                            )
                         }
                     }
                 }
@@ -59,7 +64,9 @@ struct PrefIdleEndTab: View {
                 Text("When the remote session disconnects")
             } footer: {
                 if !endDeactivate && !endLock {
-                    warn("On disconnect the Mac is neither locked nor uncovered. It is left covered but unlocked (\"dead but unlocked\").")
+                    warn(
+                        "On disconnect the Mac is neither locked nor uncovered. It is left covered but unlocked (\"dead but unlocked\")."
+                    )
                 }
             }
         }
