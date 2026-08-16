@@ -18,7 +18,7 @@
     "AvoidRetroactiveConformances" : true,
     "BeginDocumentationCommentWithOneLineSummary" : false,
     "DoNotUseSemicolons" : false,
-    "DontRepeatTypeInStaticProperties" : true,
+    "DontRepeatTypeInStaticProperties" : false,
     "FileScopedDeclarationPrivacy" : false,
     "FullyIndirectEnum" : true,
     "GroupNumericLiterals" : true,

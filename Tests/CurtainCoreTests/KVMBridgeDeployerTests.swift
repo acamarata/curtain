@@ -184,7 +184,7 @@ final class KVMBridgeDeployerTests: XCTestCase {
 
         let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: true)
         let result = await KVMBridgeDeployer.checkForUpdate(target: target)
-        guard case .success(let (remoteVersion, needsUpdate)) = result else { return XCTFail("expected success") }
+        guard case .success((let remoteVersion, let needsUpdate)) = result else { return XCTFail("expected success") }
         XCTAssertEqual(remoteVersion, "0.0.9")
         XCTAssertTrue(needsUpdate)
     }
@@ -198,7 +198,7 @@ final class KVMBridgeDeployerTests: XCTestCase {
 
         let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: true)
         let result = await KVMBridgeDeployer.checkForUpdate(target: target)
-        guard case .success(let (_, needsUpdate)) = result else { return XCTFail("expected success") }
+        guard case .success((_, let needsUpdate)) = result else { return XCTFail("expected success") }
         XCTAssertFalse(needsUpdate)
     }
 
