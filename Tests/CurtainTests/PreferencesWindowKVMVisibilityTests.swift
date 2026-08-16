@@ -73,7 +73,7 @@ final class PreferencesWindowKVMVisibilityTests: XCTestCase {
         // remain visible whether the flag is false or true, matching this
         // ticket's requirement that no other tab's visibility regresses.
         let alwaysVisible: [PreferencesView.PrefSection] = [
-            .general, .appearance, .idleEnd, .security, .disconnect, .displays, .advanced,
+            .general, .appearance, .idleEnd, .security, .disconnect, .displays, .advanced
         ]
         for enabled in [false, true] {
             Settings.kvmSectionEnabled = enabled

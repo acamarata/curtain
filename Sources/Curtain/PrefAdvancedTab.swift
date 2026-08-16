@@ -29,7 +29,9 @@ struct PrefAdvancedTab: View {
             Section("Setup") {
                 Button("Open Setup…", action: openOnboarding)
                 Button("Set Up KVM Bridge…", action: openKVMBridgeSetup)
-                    .help("Opt-in: deploys the KVM automation bridge to a TinyPilot Pi over SSH. Irrelevant unless you own TinyPilot hardware.")
+                    .help(
+                        "Opt-in: deploys the KVM automation bridge to a TinyPilot Pi over SSH. Irrelevant unless you own TinyPilot hardware."
+                    )
             }
             Section("Settings file") {
                 HStack {

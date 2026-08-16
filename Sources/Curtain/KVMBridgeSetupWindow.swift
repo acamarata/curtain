@@ -318,7 +318,9 @@ private struct KVMBridgeSetupView: View {
                 Link("https://t.me/BotFather", destination: URL(string: "https://t.me/BotFather")!)
                 Text("2. Send /newbot and follow the prompts to name your bot.")
                 Text("3. BotFather replies with a token that looks like 123456789:ABC-DEF\u{2026}")
-                Text("4. Paste that token below. It is sent directly to your Pi over SSH and stored only there \u{2014} Curtain never saves it on this Mac.")
+                Text(
+                    "4. Paste that token below. It is sent directly to your Pi over SSH and stored only there \u{2014} Curtain never saves it on this Mac."
+                )
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -404,7 +406,8 @@ enum KVMBridgeSetupPaths {
     static func bundledBridgePath() -> String {
         // Sources/Curtain/KVMBridgeSetupWindow.swift -> repo root is 3 levels up.
         let thisFile = URL(fileURLWithPath: #filePath)
-        let repoRoot = thisFile
+        let repoRoot =
+            thisFile
             .deletingLastPathComponent()  // Sources/Curtain/
             .deletingLastPathComponent()  // Sources/
             .deletingLastPathComponent()  // repo root

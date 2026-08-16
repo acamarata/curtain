@@ -80,13 +80,17 @@ struct PrefKVMTab: View {
     var body: some View {
         Form {
             Section {
-                Text("For TinyPilot KVM hardware only. Irrelevant unless you own a TinyPilot Pi wired to this Mac's video-out.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "For TinyPilot KVM hardware only. Irrelevant unless you own a TinyPilot Pi wired to this Mac's video-out."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("KVM Bridge") {
                 Button("Set Up KVM Bridge…", action: openKVMBridgeSetup)
-                    .help("Deploys the KVM Bridge package to a TinyPilot Pi over SSH and, optionally, configures Telegram login-after-reboot.")
+                    .help(
+                        "Deploys the KVM Bridge package to a TinyPilot Pi over SSH and, optionally, configures Telegram login-after-reboot."
+                    )
                 if let host = bridgeConfiguredHost {
                     Label("Deployed to \(host)", systemImage: "checkmark.circle")
                         .font(.caption).foregroundStyle(.secondary)
@@ -108,8 +112,10 @@ struct PrefKVMTab: View {
             } header: {
                 Text("Login after Reboot via Telegram")
             } footer: {
-                Text("The Telegram bot token lives only on the Bridge Pi, never on this Mac, so this Mac has no on/off switch for it — set it up or change it from the setup wizard's Telegram step.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "The Telegram bot token lives only on the Bridge Pi, never on this Mac, so this Mac has no on/off switch for it — set it up or change it from the setup wizard's Telegram step."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
@@ -124,13 +130,17 @@ struct PrefKVMTab: View {
             } header: {
                 Text("Curtain for KVM Sessions")
             } footer: {
-                Text("Designates which displays skip the cover entirely (e.g. a KVM's dedicated headless output) — same setting as the Displays tab's \u{201C}KVM display — never cover\u{201D} toggle.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "Designates which displays skip the cover entirely (e.g. a KVM's dedicated headless output) — same setting as the Displays tab's \u{201C}KVM display — never cover\u{201D} toggle."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
                 Toggle("Enable local status server (MCP)", isOn: $mcpServerEnabled)
-                    .help("Starts a loopback-only server exposing a single read-only status check, for use only when this Mac is unreachable by any other software means.")
+                    .help(
+                        "Starts a loopback-only server exposing a single read-only status check, for use only when this Mac is unreachable by any other software means."
+                    )
             } header: {
                 Text("Automation")
             } footer: {

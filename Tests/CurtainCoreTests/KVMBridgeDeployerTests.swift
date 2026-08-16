@@ -80,7 +80,8 @@ final class KVMBridgeDeployerTests: XCTestCase {
         }
         defer { KVMBridgeDeployer.processRunner = originalRunner }
 
-        let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", keyPath: "/tmp/id_ed25519", trustHostKey: true)
+        let target = KVMBridgeDeployer.Target(
+            host: "pi.local", user: "pilot", keyPath: "/tmp/id_ed25519", trustHostKey: true)
         _ = await KVMBridgeDeployer.verify(target: target)
 
         let sshArgs = capturedArgsByPath["/usr/bin/ssh"]
@@ -117,7 +118,9 @@ final class KVMBridgeDeployerTests: XCTestCase {
 
         let target = KVMBridgeDeployer.Target(host: "pi.local", user: "pilot", trustHostKey: true)
         let result = await KVMBridgeDeployer.verify(target: target)
-        guard case .success(let outcome) = result else { return XCTFail("expected success, not an error, for a non-active-but-reachable service") }
+        guard case .success(let outcome) = result else {
+            return XCTFail("expected success, not an error, for a non-active-but-reachable service")
+        }
         XCTAssertFalse(outcome.serviceActive)
         XCTAssertEqual(outcome.statusOutput, "inactive")
     }

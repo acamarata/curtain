@@ -70,7 +70,8 @@ final class CrashReportMonitorTests: XCTestCase {
     @discardableResult
     private func writeFixtureReport(named name: String, procName: String = "Curtain") throws -> URL {
         let header = #"{"bug_type":"309","timestamp":"2026-08-15 12:00:00.00 -0400","incident_id":"TEST-\#(name)"}"#
-        let payload = #"{"procName":"\#(procName)","termination":{"indicator":"Namespace SIGNAL, Code 6 Abort trap: 6"}}"#
+        let payload =
+            #"{"procName":"\#(procName)","termination":{"indicator":"Namespace SIGNAL, Code 6 Abort trap: 6"}}"#
         let url = tempDir.appendingPathComponent(name)
         try "\(header)\n\(payload)\n".write(to: url, atomically: true, encoding: .utf8)
         return url

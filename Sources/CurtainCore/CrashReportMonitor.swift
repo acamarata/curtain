@@ -334,7 +334,8 @@ public enum CrashReportMonitor {
         }
 
         guard let bridgeHost = Settings.kvmBridgeHost, !bridgeHost.isEmpty else {
-            Log.event("CrashReportMonitor: recovery launch detected but no KVM Bridge host is configured — cannot relay")
+            Log.event(
+                "CrashReportMonitor: recovery launch detected but no KVM Bridge host is configured — cannot relay")
             return
         }
 

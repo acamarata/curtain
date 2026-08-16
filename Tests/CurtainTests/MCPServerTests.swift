@@ -148,7 +148,7 @@ final class MCPServerTests: XCTestCase {
 
         let listResponse = try rpcCall(port: port, method: "tools/list")
         guard let result = listResponse["result"] as? [String: Any],
-              let tools = result["tools"] as? [[String: Any]]
+            let tools = result["tools"] as? [[String: Any]]
         else { return XCTFail("tools/list did not return a tools array: \(listResponse)") }
         XCTAssertEqual(tools.count, 1, "server must expose exactly one tool")
         XCTAssertEqual(tools.first?["name"] as? String, "curtain_status")
@@ -156,10 +156,10 @@ final class MCPServerTests: XCTestCase {
         let callResponse = try rpcCall(
             port: port, method: "tools/call", params: ["name": "curtain_status", "arguments": [String: Any]()])
         guard let callResult = callResponse["result"] as? [String: Any],
-              let content = callResult["content"] as? [[String: Any]],
-              let text = content.first?["text"] as? String,
-              let statusData = text.data(using: .utf8),
-              let status = try? JSONSerialization.jsonObject(with: statusData) as? [String: Any]
+            let content = callResult["content"] as? [[String: Any]],
+            let text = content.first?["text"] as? String,
+            let statusData = text.data(using: .utf8),
+            let status = try? JSONSerialization.jsonObject(with: statusData) as? [String: Any]
         else { return XCTFail("tools/call did not return decodable status content: \(callResponse)") }
 
         XCTAssertEqual(status["armed"] as? Bool, true)
@@ -183,7 +183,7 @@ final class MCPServerTests: XCTestCase {
         // 1. Tool enumeration + schema shape.
         let listResponse = try rpcCall(port: port, method: "tools/list")
         guard let result = listResponse["result"] as? [String: Any],
-              let tools = result["tools"] as? [[String: Any]]
+            let tools = result["tools"] as? [[String: Any]]
         else { return XCTFail("tools/list malformed: \(listResponse)") }
         XCTAssertEqual(tools.count, 1, "exactly one tool must be exposed, ever")
         guard let schema = tools.first?["inputSchema"] as? [String: Any] else {

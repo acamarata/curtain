@@ -209,7 +209,9 @@ final class KVMInputFilter {
         // device" — i.e. genuine suppression, not detection.
         let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
         guard result == kIOReturnSuccess else {
-            Log.error("KVMInputFilter: failed to seize non-matching device (vendor \(candidate.vendorID), product \(candidate.productID)): IOReturn \(result)")
+            Log.error(
+                "KVMInputFilter: failed to seize non-matching device (vendor \(candidate.vendorID), product \(candidate.productID)): IOReturn \(result)"
+            )
             return
         }
         seizedDevices[ObjectIdentifier(device)] = device

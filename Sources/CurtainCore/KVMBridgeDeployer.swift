@@ -175,28 +175,26 @@ public enum KVMBridgeDeployer {
 
     /// Separate seam for the stdin-piping shape (`sendTelegramToken`), matching
     /// `ProcessRunner`'s `run(_:_:stdin:onLaunchFailure:)` overload.
-    static var processRunnerStdin:
-        (String, [String], Data, ((Error) -> Void)?) -> ProcessRunner.Result = {
-            path, args, stdin, onLaunchFailure in
-            ProcessRunner.run(path, args, stdin: stdin, onLaunchFailure: onLaunchFailure)
-        }
+    static var processRunnerStdin: (String, [String], Data, ((Error) -> Void)?) -> ProcessRunner.Result = {
+        path, args, stdin, onLaunchFailure in
+        ProcessRunner.run(path, args, stdin: stdin, onLaunchFailure: onLaunchFailure)
+    }
 
     /// Network seam for `checkHealth` — mirrors the `processRunner` pattern
     /// so tests can feed canned HTTP responses (via a local stand-in server,
     /// per this ticket's guide, or an in-process stub) without any change to
     /// production code. Production installs the real `URLSession.shared`
     /// data-task call; tests swap this static var directly.
-    static var healthURLSession:
-        (URL) async -> (data: Data?, response: URLResponse?, error: Error?) = { url in
-            var request = URLRequest(url: url)
-            request.timeoutInterval = healthCheckTimeout
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                return (data, response, nil)
-            } catch {
-                return (nil, nil, error)
-            }
+    static var healthURLSession: (URL) async -> (data: Data?, response: URLResponse?, error: Error?) = { url in
+        var request = URLRequest(url: url)
+        request.timeoutInterval = healthCheckTimeout
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            return (data, response, nil)
+        } catch {
+            return (nil, nil, error)
         }
+    }
 
     static let deployTimeout: TimeInterval = 60.0
     static let quickTimeout: TimeInterval = 15.0
@@ -247,7 +245,10 @@ public enum KVMBridgeDeployer {
         // through ssh with the same StrictHostKeyChecking/ConnectTimeout/-i
         // options used everywhere else in this type, rather than rsync's own
         // (unrelated) flags — rsync does not accept `-o`/`-i` directly.
-        var args = ["-a", "--delete", "-e", "ssh \(sshOptionArgs(target: target).joined(separator: " "))", "\(localBridgePath)/", dest]
+        var args = [
+            "-a", "--delete", "-e", "ssh \(sshOptionArgs(target: target).joined(separator: " "))",
+            "\(localBridgePath)/", dest
+        ]
         var (outcome, timedOut) = processRunner(rsyncPath, args, deployTimeout, nil)
         if timedOut { return .failure(.sshFailed(step: "rsync", exitCode: -1, stderr: "timed out")) }
         guard outcome.succeeded else {
@@ -284,7 +285,8 @@ public enum KVMBridgeDeployer {
     /// by the wizard's "re-check status" affordance.
     public static func verify(target: Target) async -> Result<DeployOutcome, DeployError> {
         guard target.trustHostKey else { return .failure(.hostKeyNotTrusted) }
-        let args = sshOptionArgs(target: target) + ["\(target.user)@\(target.host)", "systemctl is-active curtain-bridge"]
+        let args =
+            sshOptionArgs(target: target) + ["\(target.user)@\(target.host)", "systemctl is-active curtain-bridge"]
         let (outcome, timedOut) = processRunner("/usr/bin/ssh", args, quickTimeout, nil)
         if timedOut { return .failure(.sshFailed(step: "systemctl-is-active", exitCode: -1, stderr: "timed out")) }
         // `systemctl is-active` exits non-zero for any state other than "active"
@@ -440,7 +442,9 @@ public enum KVMBridgeDeployer {
     /// --version` and compares it against `expectedBridgeVersion`. Returns the
     /// remote version string and whether it differs from what Curtain.app
     /// expects — the caller (wizard) decides whether to re-run `deploy()`.
-    public static func checkForUpdate(target: Target) async -> Result<(remoteVersion: String, needsUpdate: Bool), DeployError> {
+    public static func checkForUpdate(target: Target) async -> Result<
+        (remoteVersion: String, needsUpdate: Bool), DeployError
+    > {
         guard target.trustHostKey else { return .failure(.hostKeyNotTrusted) }
         let args =
             sshOptionArgs(target: target)

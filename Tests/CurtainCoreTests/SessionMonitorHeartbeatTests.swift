@@ -110,8 +110,8 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         let secondExpectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 guard let data = try? Data(contentsOf: self.heartbeatURL),
-                      let payload = try? JSONDecoder().decode(HeartbeatPayload.self, from: data),
-                      let date = self.isoDate(payload.timestamp)
+                    let payload = try? JSONDecoder().decode(HeartbeatPayload.self, from: data),
+                    let date = self.isoDate(payload.timestamp)
                 else { return false }
                 return date > firstDate
             },
@@ -138,7 +138,8 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
             object: nil)
         wait(for: [firstExpectation], timeout: 5)
 
-        let sizeAfterFirstTick = try FileManager.default.attributesOfItem(atPath: heartbeatURL.path)[.size] as? Int ?? -1
+        let sizeAfterFirstTick =
+            try FileManager.default.attributesOfItem(atPath: heartbeatURL.path)[.size] as? Int ?? -1
 
         // Sleep across ~3 more tick cycles (pollInterval = 2s) so the file is
         // rewritten several more times.
@@ -146,7 +147,8 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { laterExpectation.fulfill() }
         wait(for: [laterExpectation], timeout: 8)
 
-        let sizeAfterLaterTicks = try FileManager.default.attributesOfItem(atPath: heartbeatURL.path)[.size] as? Int ?? -1
+        let sizeAfterLaterTicks =
+            try FileManager.default.attributesOfItem(atPath: heartbeatURL.path)[.size] as? Int ?? -1
 
         XCTAssertGreaterThan(sizeAfterFirstTick, 0)
         // A fixed-shape JSON object's encoded size varies by at most a few bytes
@@ -154,7 +156,8 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         // append-based bug would instead multiply the size several-fold.
         XCTAssertLessThan(
             abs(sizeAfterLaterTicks - sizeAfterFirstTick), 8,
-            "heartbeat.json size should stay roughly constant (overwrite), not grow (append): \(sizeAfterFirstTick) -> \(sizeAfterLaterTicks)")
+            "heartbeat.json size should stay roughly constant (overwrite), not grow (append): \(sizeAfterFirstTick) -> \(sizeAfterLaterTicks)"
+        )
 
         // Also confirm it decodes as exactly one JSON object, not concatenated/appended fragments.
         _ = try readHeartbeat()
@@ -178,7 +181,7 @@ final class SessionMonitorHeartbeatTests: XCTestCase {
         let flippedExpectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 guard let data = try? Data(contentsOf: self.heartbeatURL),
-                      let payload = try? JSONDecoder().decode(HeartbeatPayload.self, from: data)
+                    let payload = try? JSONDecoder().decode(HeartbeatPayload.self, from: data)
                 else { return false }
                 return payload.armed == false
             },
