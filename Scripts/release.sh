@@ -234,14 +234,18 @@ hdiutil create -volname "Curtain $VERSION" \
   "$DMG" >/dev/null
 rm -rf "$(dirname "$STAGE")"
 
-shasum -a 256 "$DMG" | awk '{print $1}' > "$DMG.sha256"
+# Emit the standard "<hash>  <filename>" two-field format (not a bare hash), and use the
+# basename so the sidecar is verifiable with `shasum -a 256 -c Curtain-X.Y.Z.dmg.sha256`
+# from whatever directory the user downloaded both files into. A bare hash, or one naming
+# this build machine's absolute path, makes the -c verb fail on the end user's machine.
+( cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
 
 # --- e. Summary --------------------------------------------------------------
 echo
 echo "==> Done."
 echo "    App:      $APP"
 echo "    DMG:      $DMG"
-echo "    SHA-256:  $(cat "$DMG.sha256")  ($(basename "$DMG"))"
+echo "    SHA-256:  $(cat "$DMG.sha256")"
 echo
 echo "==> codesign verify:"
 codesign --verify --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /' || true

@@ -79,8 +79,10 @@ public enum Notifier {
             content.body = body
 
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(request) { error in
-                if let error { NSLog("Curtain: failed to post notification: \(error.localizedDescription)") }
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+            } catch {
+                NSLog("Curtain: failed to post notification: \(error.localizedDescription)")
             }
         }
     }

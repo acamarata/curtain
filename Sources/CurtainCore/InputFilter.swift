@@ -81,7 +81,7 @@ final class InputFilter {
     // production code never reads it.
     private(set) var reenableInvocationCount = 0
 
-    // physicalStateID lives in the nonisolated extension below so the C-callback
+    // physicalStateIDValue lives in the nonisolated extension below so the C-callback
     // can reach it without an actor hop. See InputFilter extension at end of file.
 
     /// Install the tap on the main run loop. Returns false if the tap could not be
@@ -312,9 +312,8 @@ private let callback: CGEventTapCallBack = { _, type, event, refcon in
 }
 
 extension InputFilter {
-    // Both constants live here (nonisolated context) so the C-callback can read them
-    // without crossing actor isolation. physicalStateID is the single source of truth;
-    // physicalStateIDValue is the name exposed at the call site in the callback.
-    fileprivate static let physicalStateID: Int64 = 1
-    fileprivate nonisolated static var physicalStateIDValue: Int64 { physicalStateID }
+    // Declared nonisolated so the C-callback can read it without crossing actor
+    // isolation. A single immutable Int64 is trivially Sendable, so this needs no
+    // main-actor hop and no separate accessor indirection.
+    fileprivate nonisolated static let physicalStateIDValue: Int64 = 1
 }

@@ -286,7 +286,21 @@ def apply_update(new_package_path: str) -> UpdateResult:
     except OSError as exc:
         return UpdateResult(ok=False, rolled_back=False, message=f"failed to create stage directory: {exc}")
 
-    venv_create = _run(["python3", "-m", "venv", str(staged_venv)], timeout=30.0)
+    # Timeout margins here are deliberately generous because this runs on a Raspberry
+    # Pi, not a dev machine: creating a venv and pip-installing opencv-python-headless
+    # and numpy over the Pi's network and SD card is genuinely slow, and the margin has
+    # to cover that slow case rather than the median one. A too-short timeout reports a
+    # spurious update failure and triggers an unnecessary rollback; an over-long one only
+    # delays a genuine failure's report, so the asymmetry favours generosity.
+    #
+    # Note for anyone tracing test_updater.py's history: this suite's long-standing flake
+    # was NOT a timing problem, despite being recorded as one. It was disk exhaustion --
+    # every apply_update() call here stages a real venv and really pip-installs this
+    # package's heavy dependencies, and the suite does that nine times into temp dirs that
+    # persist across runs, eventually producing a real "[Errno 28] No space left on
+    # device" out of pip. That is fixed test-side (see the _cheap_staged_venv fixture in
+    # tests/test_updater.py), not by these timeouts.
+    venv_create = _run(["python3", "-m", "venv", str(staged_venv)], timeout=120.0)
     if venv_create.returncode != 0:
         shutil.rmtree(stage_dir, ignore_errors=True)
         return UpdateResult(
@@ -297,7 +311,7 @@ def apply_update(new_package_path: str) -> UpdateResult:
 
     pip_install = _run(
         [str(staged_venv / "bin" / "pip"), "install", "--quiet", str(new_package_path_obj)],
-        timeout=120.0,
+        timeout=300.0,
     )
     if pip_install.returncode != 0:
         shutil.rmtree(stage_dir, ignore_errors=True)

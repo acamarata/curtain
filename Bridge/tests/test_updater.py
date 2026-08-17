@@ -23,6 +23,10 @@ Constraints: `_run` (subprocess.run) and `_query_health` /
              Only the systemd/service-restart and the /health HTTP call are
              stubbed, since those genuinely require a running systemd unit
              this test process does not have.
+             The `_cheap_staged_venv` autouse fixture additionally strips the
+             redundant re-download of heavy dependencies from those real staging
+             runs (see its docstring) -- staging stays real, its disk cost does
+             not. Run this suite from Bridge/.venv, which that fixture assumes.
 SPORT: MASTER-APPS (Bridge/ deployment artifact, T-P1-E11-03)
 """
 
@@ -34,6 +38,47 @@ from pathlib import Path
 import pytest
 
 from curtain_bridge import updater
+
+
+@pytest.fixture(autouse=True)
+def _cheap_staged_venv(monkeypatch):
+    """
+    Purpose: keep apply_update's staging step REAL while removing the disk cost
+             that made this module flaky.
+    Why: several tests below stage from this repo's own package root, so each
+         apply_update call really pip-installs curtain_bridge's dependencies --
+         opencv-python-headless and numpy, roughly 150MB of venv per call. This
+         module calls apply_update nine times, into tmp dirs pytest retains across
+         runs, so a few consecutive runs exhaust the disk. The failure that surfaces
+         is a real `OSError: [Errno 28] No space left on device` raised by pip,
+         which then fails whatever assertion the test was actually making. That is
+         the true root cause of this suite's long-recorded flakiness; it was
+         previously attributed to subprocess timing, but no timeout widening could
+         fix it, and the ENOSPC error was observed directly.
+    How: rewrite only the two heavy commands. `python3 -m venv` gains
+         --system-site-packages so the staged venv inherits the already-installed
+         heavy dependencies from the interpreter running the suite, and `pip install`
+         gains --no-deps so it installs the package under test without re-resolving
+         and re-downloading those dependencies.
+    Constraints: this deliberately does NOT stub the staging step out. A real venv is
+                 still created, a real pip install still runs, and
+                 _validate_staged_install still genuinely imports the staged package,
+                 resolves its metadata and invokes its --version entry point. Only the
+                 redundant re-download of dependencies the test environment already has
+                 is removed, so the logic under test is unchanged.
+                 Assumes the suite runs inside Bridge/.venv (the documented way to run
+                 it), since that is where the inherited dependencies come from.
+    """
+    real_run = updater._run
+
+    def cheap_run(cmd, *args, **kwargs):
+        if len(cmd) >= 3 and cmd[1] == "-m" and cmd[2] == "venv":
+            cmd = [*cmd[:3], "--system-site-packages", *cmd[3:]]
+        elif len(cmd) >= 2 and cmd[1] == "install":
+            cmd = [*cmd[:2], "--no-deps", *cmd[2:]]
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(updater, "_run", cheap_run)
 
 
 def _write_fixture_package(root: Path, *, version: str, valid: bool) -> Path:

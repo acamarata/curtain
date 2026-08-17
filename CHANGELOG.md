@@ -6,6 +6,59 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+**Maintenance.** No user-facing behavior changes. Fixes a checksum-verification papercut,
+removes the last two build warnings, and fixes the real (long-misdiagnosed) cause of the
+Bridge test suite's flakiness.
+
+### Fixed
+
+- **The published `.dmg.sha256` sidecar is now verifiable with `shasum -c`.** It previously
+  contained a bare 64-character hash with no filename field, so the standard
+  `shasum -a 256 -c Curtain-X.Y.Z.dmg.sha256` invocation failed with "no properly formatted
+  SHA checksum lines found". Comparing the hash by eye worked, but a user reaching for the
+  standard verb hit a confusing error on a supply-chain verification step, which is the worst
+  place to have one. `Scripts/release.sh` now emits the conventional two-field
+  `<hash>  <filename>` form, using the basename so it verifies from whatever directory the
+  user downloaded both files into rather than naming the build machine's absolute path.
+  Affects v1.0.0, v2.0.0 and v2.0.1 identically; those published sidecars are deliberately
+  left as-is, since rewriting a published checksum artifact after the fact is worse than the
+  papercut it would fix.
+
+- **Fixed the actual cause of `Bridge/tests/test_updater.py`'s long-standing flakiness, which
+  was misdiagnosed as a timing problem.** The recorded diagnosis was subprocess timing
+  sensitivity under concurrent load, with widened timeouts as the suggested remedy. That
+  diagnosis was wrong, and no timeout change fixes it. Every `apply_update` call in this
+  module stages a real venv and really pip-installs the package under test; for the tests
+  that stage from this repo's own root, that means installing `opencv-python-headless` and
+  `numpy` (roughly 150MB of venv) nine times per run, into temp directories pytest retains
+  between runs. After a few consecutive runs the disk fills and pip raises a real
+  `OSError: [Errno 28] No space left on device`, which then fails whichever assertion the
+  test was actually making — hence a different test appearing to fail each time, the pattern
+  that made it look like a race. The failing pip error was observed directly rather than
+  inferred. Fixed with an autouse fixture that keeps staging genuinely real (a real venv is
+  created, a real pip install runs, and validation still imports the staged package, resolves
+  its metadata and invokes its `--version` entry point) while removing only the redundant
+  re-download of dependencies the test environment already has, via `--system-site-packages`
+  and `--no-deps`. Verified with 10 consecutive green runs; peak disk use during the suite
+  dropped from 83% to 55% on the same machine.
+
+- **Removed the last two compiler warnings, so a clean release build now emits zero.** Both
+  predated the v2.0 work and survived the whole phase. `InputFilter.swift`'s
+  `physicalStateIDValue` was a `nonisolated` computed property reading a main-actor-isolated
+  stored constant, which warns under Swift 6 isolation checking; it is now a single
+  `nonisolated static let`, which is trivially `Sendable` and needs no accessor indirection.
+  `Notifier.swift` used `UNUserNotificationCenter.add`'s completion-handler form inside code
+  that was already running in an async `@MainActor` context, and now awaits the async
+  alternative directly.
+
+### Changed
+
+- Widened `updater.py`'s staging subprocess timeouts (venv creation 30s to 120s, pip install
+  120s to 300s). This is unrelated to the test fix above: it reflects that the Bridge runs on
+  a Raspberry Pi, where installing this package's dependencies over the Pi's network and SD
+  card is genuinely slow, and a too-short timeout there reports a spurious update failure and
+  triggers an unnecessary rollback.
+
 ## [2.0.1] - 2026-08-16
 
 **Patch release.** Post-release hardening pass on v2.0.0: fixes a critical unauthenticated

@@ -84,13 +84,13 @@ The Bridge can also host its own MCP server (`curtain-bridge-mcp`), separate fro
 
 Pushing a `v*` tag (or running the workflow manually via `workflow_dispatch`) triggers `.github/workflows/release.yml`, which builds, signs, notarizes (when the notary secrets are configured), and packages `Scripts/release.sh`'s output, then uploads `Curtain-*.dmg` and `Curtain-*.dmg.sha256` as a downloadable CI build artifact.
 
-CI deliberately stops there — it does not publish a public GitHub Release. This is a first-run pipeline with no track record yet, and a bug in the tag trigger or a `workflow_dispatch` misfire publishing an unreviewed, possibly-broken signed build straight to end users is a real risk worth avoiding until the pipeline has proven itself across several runs. Publishing stays a deliberate, reviewed, manual step:
+CI deliberately stops there — it does not publish a public GitHub Release. A bug in the tag trigger or a `workflow_dispatch` misfire publishing an unreviewed, possibly-broken signed build straight to end users is a real risk, and for a tool that covers your screen and blocks your keyboard, a reviewed human step before anything reaches users is worth its small cost. Publishing is therefore a deliberate manual step, and is expected to stay that way:
 
 1. Download the artifact from the Actions run.
-2. Verify the checksum: `shasum -a 256 Curtain-*.dmg` and compare against the `.sha256` file.
-3. Publish it: `gh release create --generate-notes <tag> dist/Curtain-*.dmg dist/Curtain-*.dmg.sha256`.
+2. Verify the checksum: `shasum -a 256 -c Curtain-*.dmg.sha256` (run it from the directory holding both files; it prints `OK`).
+3. Write release notes, then publish: `gh release create <tag> dist/Curtain-*.dmg dist/Curtain-*.dmg.sha256 --title "Curtain <tag>" --notes-file <notes>`.
 
-Full automation (CI publishing the Release itself) is a candidate fast-follow once the tag-triggered workflow has run reliably several times.
+On step 3, prefer real written notes over `--generate-notes`; the auto-generated form is a dump of raw commit subjects, which is not the standard the published releases hold to. Distil the CHANGELOG entry for that version instead.
 
 ## License
 
