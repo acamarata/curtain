@@ -284,6 +284,21 @@ private struct KVMBridgeSetupView: View {
         let localBridgePath = KVMBridgeSetupPaths.bundledBridgePath()
         Task {
             let result = await KVMBridgeDeployer.deploy(target: capturedTarget, localBridgePath: localBridgePath)
+            // Provisioning the /health and /crash-report bearer token is not
+            // a UI step (unlike the Telegram token, this secret is generated
+            // by Curtain itself, not typed by the human) — every successful
+            // deploy silently (re-)generates and resends a fresh token, off
+            // the main actor alongside the deploy call itself, so re-running
+            // this wizard against an already-deployed Pi (the documented
+            // "re-run any time" upgrade path) also closes the gap for
+            // installs that predate this token requirement.
+            var authTokenResult: Result<String, KVMBridgeDeployer.DeployError>?
+            if case .success(let outcome) = result, outcome.serviceActive {
+                let token = KVMBridgeDeployer.generateBridgeAuthToken()
+                authTokenResult = KVMBridgeDeployer.sendBridgeAuthToken(target: capturedTarget, token: token).map {
+                    token
+                }
+            }
             await MainActor.run {
                 deploying = false
                 switch result {
@@ -298,7 +313,21 @@ private struct KVMBridgeSetupView: View {
                     // a hostname/IP) so CrashReportMonitor knows where to
                     // relay a crash summary on a later, independent launch,
                     // outside this wizard's own transient @State.
-                    if outcome.serviceActive { Settings.kvmBridgeHost = host }
+                    if outcome.serviceActive {
+                        Settings.kvmBridgeHost = host
+                        switch authTokenResult {
+                        case .success(let token):
+                            Settings.kvmBridgeAuthToken = token
+                            deployStatusLines.append("Bridge auth token provisioned.")
+                        case .failure(let error):
+                            deployStatusLines.append(
+                                "Warning: failed to provision the bridge auth token (\(error)) — "
+                                    + "health checks and crash relay will fail until this wizard is re-run successfully."
+                            )
+                        case .none:
+                            break
+                        }
+                    }
                 case .failure(let error):
                     deployError = "Deploy failed: \(error)"
                     deployStatusLines.append("Failed \u{2014} see error below.")
