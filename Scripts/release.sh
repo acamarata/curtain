@@ -7,7 +7,8 @@
 #
 # Default signing is ad-hoc ("-"), which ships today without an Apple Developer
 # account. Notarization is env-var-gated: set SIGN_IDENTITY to your Developer ID
-# plus a notary credential source (CURTAIN_NOTARY_PROFILE, or
+# plus a notary credential source (CURTAIN_NOTARY_PROFILE, or the App Store Connect
+# API key trio CURTAIN_NOTARY_KEY+CURTAIN_NOTARY_KEY_ID+CURTAIN_NOTARY_ISSUER, or
 # CURTAIN_NOTARY_APPLE_ID+CURTAIN_TEAM_ID+CURTAIN_NOTARY_APP_PASSWORD) to
 # graduate to a fully notarized build. No script edits required.
 set -euo pipefail
@@ -28,13 +29,27 @@ ENTITLEMENTS="$REPO/curtain.entitlements"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 
 # Notarization credentials (only consulted when SIGN_IDENTITY is a real Developer
-# ID, i.e. not unset and not "-"). Either set CURTAIN_NOTARY_PROFILE to a
-# notarytool keychain profile name (created once via `xcrun notarytool
-# store-credentials`), or set all three of CURTAIN_NOTARY_APPLE_ID,
-# CURTAIN_TEAM_ID, and CURTAIN_NOTARY_APP_PASSWORD. Real values are supplied by
-# the maintainer's environment, never hardcoded here.
+# ID, i.e. not unset and not "-"). Three accepted sources, tried in this order:
+#
+#   1. CURTAIN_NOTARY_PROFILE — a notarytool keychain profile name, created once
+#      via `xcrun notarytool store-credentials`. Most convenient interactively.
+#   2. CURTAIN_NOTARY_KEY + CURTAIN_NOTARY_KEY_ID + CURTAIN_NOTARY_ISSUER — an
+#      App Store Connect API key (.p8 file path, key ID, issuer UUID).
+#   3. CURTAIN_NOTARY_APPLE_ID + CURTAIN_TEAM_ID + CURTAIN_NOTARY_APP_PASSWORD —
+#      an Apple ID with an app-specific password.
+#
+# The API key (2) is preferred over the Apple ID (3) for automation and is the
+# right choice for CI: it is a file plus two identifiers, so it drops into GitHub
+# Actions secrets cleanly, and it is not tied to an individual Apple ID's
+# app-specific password, which is bound to that account's 2FA state and silently
+# starts returning "HTTP 401 Invalid credentials" once revoked or regenerated —
+# a failure that otherwise only surfaces mid-release, after a full signed build.
+# Real values are supplied by the maintainer's environment, never hardcoded here.
 CURTAIN_TEAM_ID="${CURTAIN_TEAM_ID:-}"
 CURTAIN_NOTARY_PROFILE="${CURTAIN_NOTARY_PROFILE:-}"
+CURTAIN_NOTARY_KEY="${CURTAIN_NOTARY_KEY:-}"
+CURTAIN_NOTARY_KEY_ID="${CURTAIN_NOTARY_KEY_ID:-}"
+CURTAIN_NOTARY_ISSUER="${CURTAIN_NOTARY_ISSUER:-}"
 CURTAIN_NOTARY_APPLE_ID="${CURTAIN_NOTARY_APPLE_ID:-}"
 CURTAIN_NOTARY_APP_PASSWORD="${CURTAIN_NOTARY_APP_PASSWORD:-}"
 
@@ -194,17 +209,28 @@ codesign --force --options runtime --timestamp \
 #     state and fails loudly rather than silently shipping an ad-hoc build under
 #     a real signing identity.
 if [[ -z "$SIGN_IDENTITY" || "$SIGN_IDENTITY" == "-" ]]; then
-  echo "==> WARNING: ad-hoc/unnotarized build. Set SIGN_IDENTITY plus notary credentials (CURTAIN_NOTARY_PROFILE, or CURTAIN_NOTARY_APPLE_ID+CURTAIN_TEAM_ID+CURTAIN_NOTARY_APP_PASSWORD) to produce a notarized release."
+  echo "==> WARNING: ad-hoc/unnotarized build. Set SIGN_IDENTITY plus notary credentials (CURTAIN_NOTARY_PROFILE, or CURTAIN_NOTARY_KEY+CURTAIN_NOTARY_KEY_ID+CURTAIN_NOTARY_ISSUER, or CURTAIN_NOTARY_APPLE_ID+CURTAIN_TEAM_ID+CURTAIN_NOTARY_APP_PASSWORD) to produce a notarized release."
 else
   NOTARY_AUTH_ARGS=()
   if [[ -n "$CURTAIN_NOTARY_PROFILE" ]]; then
     NOTARY_AUTH_ARGS=(--keychain-profile "$CURTAIN_NOTARY_PROFILE")
+  elif [[ -n "$CURTAIN_NOTARY_KEY" && -n "$CURTAIN_NOTARY_KEY_ID" && -n "$CURTAIN_NOTARY_ISSUER" ]]; then
+    # Fail here rather than letting notarytool fail after the (slow) upload: a
+    # missing .p8 is a typo in the path 100% of the time, and the error it would
+    # otherwise produce arrives minutes later and reads like an auth rejection.
+    if [[ ! -f "$CURTAIN_NOTARY_KEY" ]]; then
+      echo "ERROR: CURTAIN_NOTARY_KEY is set but no file exists at: $CURTAIN_NOTARY_KEY"
+      exit 1
+    fi
+    NOTARY_AUTH_ARGS=(--key "$CURTAIN_NOTARY_KEY" --key-id "$CURTAIN_NOTARY_KEY_ID" --issuer "$CURTAIN_NOTARY_ISSUER")
   elif [[ -n "$CURTAIN_NOTARY_APPLE_ID" && -n "$CURTAIN_TEAM_ID" && -n "$CURTAIN_NOTARY_APP_PASSWORD" ]]; then
     NOTARY_AUTH_ARGS=(--apple-id "$CURTAIN_NOTARY_APPLE_ID" --team-id "$CURTAIN_TEAM_ID" --password "$CURTAIN_NOTARY_APP_PASSWORD")
   else
     echo "ERROR: SIGN_IDENTITY is set to a real Developer ID but no notary credential source is configured."
-    echo "       Set CURTAIN_NOTARY_PROFILE (a notarytool keychain profile name), or set all three of"
-    echo "       CURTAIN_NOTARY_APPLE_ID, CURTAIN_TEAM_ID, and CURTAIN_NOTARY_APP_PASSWORD."
+    echo "       Set one of:"
+    echo "         - CURTAIN_NOTARY_PROFILE (a notarytool keychain profile name), or"
+    echo "         - CURTAIN_NOTARY_KEY + CURTAIN_NOTARY_KEY_ID + CURTAIN_NOTARY_ISSUER (App Store Connect API key), or"
+    echo "         - CURTAIN_NOTARY_APPLE_ID + CURTAIN_TEAM_ID + CURTAIN_NOTARY_APP_PASSWORD."
     echo "       Refusing to ship a real-identity build without notarization (half-configured is worse than ad-hoc)."
     exit 1
   fi
