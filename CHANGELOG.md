@@ -6,9 +6,16 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-08-18
+
 **Maintenance.** No user-facing behavior changes. Fixes a checksum-verification papercut,
 removes the last two build warnings, and fixes the real (long-misdiagnosed) cause of the
 Bridge test suite's flakiness.
+
+Like v2.0.0 and v2.0.1, this is an ad-hoc-signed build, so the `xattr -dr com.apple.quarantine`
+step in the README still applies. Notarization remains available but deliberately unadopted:
+for a project this small it adds certificate handling, CI secrets and an annual renewal in
+exchange for removing one documented install step.
 
 ### Fixed
 
