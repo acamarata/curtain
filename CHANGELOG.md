@@ -6,6 +6,50 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-08-18
+
+**Curtain is now signed with a Developer ID and notarized by Apple.** Both the `.dmg` and the
+app inside it are signed, notarized and stapled, so Gatekeeper accepts a fresh download with
+no workaround and the check succeeds offline. The `xattr -dr com.apple.quarantine` step is
+gone for good.
+
+### Added
+
+- **Notarized releases.** `Scripts/release.sh` gained App Store Connect API key support
+  (`CURTAIN_NOTARY_KEY` + `CURTAIN_NOTARY_KEY_ID` + `CURTAIN_NOTARY_ISSUER`), tried after a
+  notarytool keychain profile and before an Apple ID. This was not a preference: testing the
+  stored credentials against Apple found the app-specific password returns `HTTP 401 Invalid
+  credentials` while the API key authenticates cleanly, so the only working credential was the
+  one the script could not consume. The API key is also the better automation credential, being
+  a file plus two identifiers that map onto CI secrets directly and are not bound to an
+  individual Apple ID's 2FA state.
+
+### Fixed
+
+- **The `.dmg` itself is now signed, notarized and stapled, not just the app inside it.**
+  Stapling only the app left the `.dmg` assessed by Gatekeeper as "rejected — no usable
+  signature", which is precisely the warning notarization is supposed to remove: the `.dmg` is
+  what the user downloads, so it is what carries the quarantine flag and gets checked first.
+  Verified by applying a real download quarantine flag to the built `.dmg` and confirming
+  `spctl` reports `accepted / source=Notarized Developer ID` with no workaround applied.
+- **The release script no longer prints the ad-hoc quarantine warning after a notarized
+  build.** It reported the ad-hoc caveat unconditionally, so a fully clean notarized run still
+  ended by telling the maintainer to warn users about a step that no longer applied. The
+  summary now reports against what was actually built, and for notarized builds prints the
+  app and `.dmg` Gatekeeper assessments plus both stapled tickets.
+- **The checksum is now computed after the `.dmg` is signed and stapled.** Both operations
+  mutate the file, so hashing earlier would have published a checksum that did not match what
+  users download.
+
+### Note for existing users
+
+Upgrading from v2.0.2 or earlier clears Curtain's Accessibility permission once, because macOS
+ties that permission to the code signature and this release changes it from ad-hoc to a real
+Developer ID. Curtain still shows as armed, so the loss is silent — re-enable it under System
+Settings, Privacy & Security, Accessibility, then use "Activate Now" once to confirm the cover
+rises. This is a one-time cost: the Developer ID identity is stable, so future updates keep the
+permission rather than dropping it on every install, which is what ad-hoc builds did.
+
 ### Documentation
 
 - **README now explains that updating Curtain silently drops its Accessibility permission,

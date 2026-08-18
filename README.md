@@ -19,19 +19,19 @@ Your laptop and the desk share one login session, so a window that blocks input 
 
 ## Install
 
-1. Download `Curtain-2.0.0.dmg` from the [Releases](../../releases) page.
+1. Download `Curtain-2.0.3.dmg` from the [Releases](../../releases) page.
 2. Open the DMG and drag `Curtain.app` to Applications.
 3. Launch Curtain. First launch walks you through granting Accessibility, setting an optional password, and installing an optional disconnect helper.
 
+Releases from v2.0.3 onward are signed with a Developer ID and notarized by Apple, and both the `.dmg` and the app inside it carry a stapled notarization ticket. Gatekeeper accepts them on first open with no workaround, and the check works offline. Earlier releases (v1.0.0 through v2.0.2) were ad-hoc signed and needed `xattr -dr com.apple.quarantine /Applications/Curtain.app` once after install; if you are still on one of those, upgrading removes that step for good.
+
 Curtain needs Accessibility permission to block desk input, so grant it when prompted (System Settings, Privacy & Security, Accessibility). If Accessibility is not granted, Curtain refuses to show the cover and notifies you, rather than putting up a screen it cannot unlock.
 
-**Re-grant Accessibility after every update.** Curtain's releases are ad-hoc signed rather than notarized, which means macOS has no stable code identity to tie the permission to: replacing the app looks like a different app, and the Accessibility grant is silently dropped. Curtain will still show as armed, because by default it arms and warns you at connect time rather than refusing to arm. So after installing a new version, re-enable Curtain under System Settings, Privacy & Security, Accessibility (if a stale entry is listed, remove it with the minus button and add the new app), then use "Activate Now" from the menu-bar icon once to confirm the cover actually rises.
+**Upgrading from v2.0.2 or earlier drops the Accessibility permission once.** macOS ties that permission to an app's code signature, and this release changes the signature from ad-hoc to a real Developer ID, so the system treats it as a different app and clears the grant. Curtain will still show as armed, because by default it arms and warns at connect time rather than refusing to arm, so the loss is silent. After upgrading, re-enable Curtain under System Settings, Privacy & Security, Accessibility (remove any stale entry with the minus button first), then use "Activate Now" from the menu-bar icon once to confirm the cover actually rises. This is a one-time cost of the move to notarization: because the Developer ID identity is stable, later updates keep the permission instead of silently dropping it on every install, which is what ad-hoc builds did.
 
 If you would rather Curtain refuse to arm at all than arm without the ability to block input, open Settings, Security and change "If Accessibility is missing" from "Warn and arm anyway" to "Refuse to arm". That trades convenience for a louder, earlier failure, which is the safer choice if you rely on Curtain unattended.
 
 **Emergency unlock:** press **Control + Option + Command + U** at any time to force-deactivate the curtain. This works even without Accessibility granted (it uses a Carbon hotkey), so it is your guaranteed way out.
-
-**If your download is notarized** (a Developer-ID-signed release from the Releases page), Gatekeeper accepts it on first launch. No extra step needed.
 
 **If you built from source, or your release predates notarization,** the app is ad-hoc signed and carries no Apple notarization ticket, so Gatekeeper refuses the first launch. Clear the quarantine flag once, then open the app:
 
@@ -44,10 +44,12 @@ This is the expected, correct step for a source build without a Developer ID, no
 Either way, verify the DMG against its published SHA-256 before installing (the `.sha256` file is attached to the release):
 
 ```bash
-shasum -a 256 Curtain-2.0.0.dmg
+shasum -a 256 -c Curtain-2.0.3.dmg.sha256
 ```
 
-The checksum confirms the file you downloaded is byte-for-byte what was published; it protects against a corrupted download or a tampered mirror. It says nothing about whether Apple has scanned or signed the binary. Notarization is a separate, independent guarantee. When a notarized release is available, do both: check the SHA-256 and rely on Gatekeeper's notarization check. An ad-hoc build only has the checksum guarantee.
+Run it from the directory holding both the `.dmg` and its `.sha256` sidecar; it prints `Curtain-2.0.3.dmg: OK`. (Sidecars for v2.0.2 and later use the standard two-field format that `-c` expects. For v1.0.0 through v2.0.1 the sidecar is a bare hash, so compare it by eye against `shasum -a 256 Curtain-X.Y.Z.dmg` instead.)
+
+The checksum confirms the file you downloaded is byte-for-byte what was published; it protects against a corrupted download or a tampered mirror. It says nothing about whether Apple has scanned or signed the binary. Notarization is a separate, independent guarantee, and from v2.0.3 onward you have both: verify the SHA-256, and let Gatekeeper verify the stapled notarization ticket.
 
 ## Settings
 

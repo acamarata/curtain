@@ -260,10 +260,28 @@ hdiutil create -volname "Curtain $VERSION" \
   "$DMG" >/dev/null
 rm -rf "$(dirname "$STAGE")"
 
+# Sign, notarize and staple the .dmg ITSELF, not just the app inside it. Stapling
+# only the app is not enough: the .dmg is the artifact the user actually downloads,
+# so it is the artifact that carries the quarantine flag and is the first thing
+# Gatekeeper assesses. An unsigned .dmg is assessed "rejected — no usable signature"
+# even when the app inside is correctly notarized, which is exactly the warning
+# notarization is meant to remove. Stapling it too means the check passes offline,
+# without a round trip to Apple on first open.
+if [[ -n "$SIGN_IDENTITY" && "$SIGN_IDENTITY" != "-" ]]; then
+  echo "==> Signing $DMG"
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"
+  echo "==> Notarizing $DMG"
+  xcrun notarytool submit "$DMG" "${NOTARY_AUTH_ARGS[@]}" --wait
+  xcrun stapler staple "$DMG"
+fi
+
 # Emit the standard "<hash>  <filename>" two-field format (not a bare hash), and use the
 # basename so the sidecar is verifiable with `shasum -a 256 -c Curtain-X.Y.Z.dmg.sha256`
 # from whatever directory the user downloaded both files into. A bare hash, or one naming
 # this build machine's absolute path, makes the -c verb fail on the end user's machine.
+#
+# Computed AFTER the .dmg is signed and stapled: both mutate the file, so hashing any
+# earlier would publish a checksum that does not match what users download.
 ( cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
 
 # --- e. Summary --------------------------------------------------------------
@@ -275,9 +293,25 @@ echo "    SHA-256:  $(cat "$DMG.sha256")"
 echo
 echo "==> codesign verify:"
 codesign --verify --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /' || true
-echo "==> spctl assessment (ad-hoc/unnotarized will be rejected — expected):"
-spctl -a -vv "$APP" 2>&1 | sed 's/^/    /' || true
-echo
-echo "Note: an ad-hoc build is unnotarized. End users opening the .dmg may need to"
-echo "strip the quarantine flag once:  xattr -dr com.apple.quarantine /Applications/Curtain.app"
-echo "Enroll in the Apple Developer Program and use the NOTARIZATION SWAP block above to remove that step."
+# Report against what was actually built. Printing the ad-hoc caveat after a
+# successful notarized run (as this did until v2.0.3) is worse than printing
+# nothing: it tells the maintainer to warn users about a quarantine step that no
+# longer applies, and it makes a genuinely clean run look half-finished.
+if [[ -z "$SIGN_IDENTITY" || "$SIGN_IDENTITY" == "-" ]]; then
+  echo "==> spctl assessment (ad-hoc/unnotarized will be rejected — expected):"
+  spctl -a -vv "$APP" 2>&1 | sed 's/^/    /' || true
+  echo
+  echo "Note: an ad-hoc build is unnotarized. End users opening the .dmg may need to"
+  echo "strip the quarantine flag once:  xattr -dr com.apple.quarantine /Applications/Curtain.app"
+  echo "Set SIGN_IDENTITY plus a notary credential source to remove that step."
+else
+  echo "==> spctl assessment — app (expect: accepted, Notarized Developer ID):"
+  spctl -a -vv "$APP" 2>&1 | sed 's/^/    /' || true
+  echo "==> spctl assessment — dmg (expect: accepted, Notarized Developer ID):"
+  spctl -a -t open --context context:primary-signature -vv "$DMG" 2>&1 | sed 's/^/    /' || true
+  echo "==> stapled tickets:"
+  xcrun stapler validate "$APP" 2>&1 | sed 's/^/    app: /' || true
+  xcrun stapler validate "$DMG" 2>&1 | sed 's/^/    dmg: /' || true
+  echo
+  echo "Notarized build: users can open this .dmg with no quarantine workaround."
+fi
