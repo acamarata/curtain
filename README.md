@@ -25,6 +25,10 @@ Your laptop and the desk share one login session, so a window that blocks input 
 
 Curtain needs Accessibility permission to block desk input, so grant it when prompted (System Settings, Privacy & Security, Accessibility). If Accessibility is not granted, Curtain refuses to show the cover and notifies you, rather than putting up a screen it cannot unlock.
 
+**Re-grant Accessibility after every update.** Curtain's releases are ad-hoc signed rather than notarized, which means macOS has no stable code identity to tie the permission to: replacing the app looks like a different app, and the Accessibility grant is silently dropped. Curtain will still show as armed, because by default it arms and warns you at connect time rather than refusing to arm. So after installing a new version, re-enable Curtain under System Settings, Privacy & Security, Accessibility (if a stale entry is listed, remove it with the minus button and add the new app), then use "Activate Now" from the menu-bar icon once to confirm the cover actually rises.
+
+If you would rather Curtain refuse to arm at all than arm without the ability to block input, open Settings, Security and change "If Accessibility is missing" from "Warn and arm anyway" to "Refuse to arm". That trades convenience for a louder, earlier failure, which is the safer choice if you rely on Curtain unattended.
+
 **Emergency unlock:** press **Control + Option + Command + U** at any time to force-deactivate the curtain. This works even without Accessibility granted (it uses a Carbon hotkey), so it is your guaranteed way out.
 
 **If your download is notarized** (a Developer-ID-signed release from the Releases page), Gatekeeper accepts it on first launch. No extra step needed.

@@ -6,6 +6,23 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+
+- **README now explains that updating Curtain silently drops its Accessibility permission,
+  and how to restore it.** Found by installing v2.0.2 over v2.0.0 and testing the result:
+  the app came back armed, the bounded "Test Curtain (10s)" cover worked, but "Activate Now"
+  silently refused to raise the cover. Cause: releases are ad-hoc signed rather than
+  notarized, so macOS has no stable code identity to bind the TCC grant to — a replaced
+  bundle reads as a different app and the permission is dropped. Nothing was broken; the
+  refusal is the designed safe behavior (Curtain will not raise a cover it cannot guarantee
+  it can take down) and it does notify at connect time. But because the default
+  "If Accessibility is missing" behavior is "Warn and arm anyway", the menu bar still reads
+  as armed in the meantime, so a user who does not know to re-grant can believe they are
+  covered when they are not. The README now says to re-grant after each update, how to clear
+  a stale entry, and how to verify with "Activate Now"; it also points at the "Refuse to arm"
+  option for anyone who would rather fail loudly and early. Documentation only — no behavior
+  change, since the mechanism is a macOS consequence of ad-hoc signing rather than a defect.
+
 ## [2.0.2] - 2026-08-18
 
 **Maintenance.** No user-facing behavior changes. Fixes a checksum-verification papercut,
