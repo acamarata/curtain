@@ -7,24 +7,35 @@
 
 ## Install
 
-1. Download `Curtain-1.0.0.dmg` from the [GitHub Releases page](https://github.com/acamarata/curtain/releases).
+1. Download the latest `Curtain-X.Y.Z.dmg` from the [GitHub Releases page](https://github.com/acamarata/curtain/releases).
 2. Open the DMG.
 3. Drag `Curtain.app` into the `Applications` folder.
 4. Launch Curtain from `/Applications`.
 
 On first launch an onboarding flow walks you through setup: Welcome → grant Accessibility → optional disconnect helper → optional password → finish. When it completes, the curtains icon appears in the menu bar.
 
+## Verify your download
+
+```bash
+shasum -a 256 -c Curtain-X.Y.Z.dmg.sha256
+```
+
+Run it from the directory holding both the `.dmg` and its `.sha256` sidecar; it prints `Curtain-X.Y.Z.dmg: OK`. Sidecars from v2.0.2 onward use the standard two-field format `-c` expects. For v1.0.0 through v2.0.1 the sidecar is a bare hash, so compare it by eye against `shasum -a 256 Curtain-X.Y.Z.dmg` instead.
+
 ## First launch: Gatekeeper
 
-Curtain is currently ad-hoc signed, not yet notarized. On a clean download macOS Gatekeeper blocks the first launch and reports the app is damaged or from an unidentified developer. This is expected for now.
+Releases from **v2.0.3 onward are signed with a Developer ID and notarized by Apple**, and both the `.dmg` and the app inside it carry a stapled notarization ticket. Gatekeeper accepts them on first open with nothing extra to do, and because the ticket is stapled the check also works offline. Download, open, drag, launch.
 
-Clear the quarantine flag once, then open the app normally:
+Two cases still need the quarantine flag cleared once:
+
+- A release **before v2.0.3** (v1.0.0 through v2.0.2), which was ad-hoc signed.
+- Anything you **built from source**, which is ad-hoc signed by default.
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Curtain.app
 ```
 
-Then double-click `Curtain.app`. Right-clicking and choosing Open is no longer enough on recent macOS, so use the command above. Once a notarized build ships, this step goes away and Curtain opens straight from the DMG.
+Then double-click `Curtain.app`. Right-clicking and choosing Open is no longer enough on recent macOS, so use the command above. This is the expected step for a build without a Developer ID, not a workaround to avoid — and upgrading to a current release removes it entirely.
 
 ## Grant Accessibility
 
@@ -38,7 +49,13 @@ The onboarding flow deep-links you straight to the right pane. You can also open
 
 If Curtain does not appear in the Accessibility list, launch it once from `/Applications`, then check again.
 
-After every rebuild of a local ad-hoc build, re-grant Accessibility. Rebuilding produces a new code signature and macOS does not carry over the old grant automatically.
+macOS ties the Accessibility grant to an app's code signature, so it does not survive a signature change. In practice:
+
+- **Upgrading to v2.0.3 from v2.0.2 or earlier clears the grant once**, because the signature changes from ad-hoc to a real Developer ID. Re-enable Curtain in the Accessibility list afterwards (remove the stale entry with the minus button first), then use **Activate Now** from the menu-bar icon to confirm the cover actually rises.
+- **Updates from v2.0.3 onward keep the grant**, because the Developer ID identity is stable.
+- **Local source builds need re-granting after every rebuild**, since each rebuild produces a new ad-hoc signature.
+
+This matters because the loss is silent: Curtain still reports itself as armed, since by default it arms and warns at connect time rather than refusing to arm. If you would rather it fail loudly, set **Settings → Security → "If Accessibility is missing"** to **Refuse to arm**.
 
 ## Open at login
 
@@ -54,7 +71,7 @@ If you never set a password, the default is `curtain`. The password is stored as
 
 The optional "disconnect the remote session" feature is off by default. When you enable it (in settings or during onboarding), Curtain registers a privileged helper through SMAppService and asks for one approval in System Settings. There is no sudoers rule.
 
-Under the current ad-hoc build, this helper may fail to register. The privileged-helper path needs a notarized or Developer ID signed build to install cleanly. Until then, leave the feature off or expect the registration to be rejected.
+On a released build (v2.0.3 onward, Developer ID signed and notarized) the helper registers through `SMAppService.daemon` and needs one approval in System Settings. On a local ad-hoc or source build, which cannot register an `SMAppService` daemon, Curtain falls back to a small privileged helper installed with one admin prompt, scoped to the current user. A public notarized build never installs a sudoers rule.
 
 ## Mark DisplayLink monitors (if you have them)
 

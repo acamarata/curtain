@@ -15,13 +15,17 @@ Accessibility permission is not granted. Curtain will not put up a cover it cann
 
 ## macOS blocks the app on first launch (Gatekeeper)
 
-Curtain is ad-hoc signed and not yet notarized, so a clean download is quarantined. Clear the flag once, then open normally:
+Releases from **v2.0.3 onward are Developer ID signed and notarized**, with a stapled ticket on both the `.dmg` and the app, so Gatekeeper should accept them with nothing extra to do. If you hit a block on one of those, the download is probably corrupt or truncated — verify it before anything else:
+
+```bash
+shasum -a 256 -c Curtain-X.Y.Z.dmg.sha256
+```
+
+A block is expected on a release **before v2.0.3**, or on a build you made from source, since both are ad-hoc signed. Clear the flag once, then open normally:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Curtain.app
 ```
-
-This is a current limitation that goes away once a notarized build ships.
 
 ## The app will not launch
 
@@ -60,9 +64,11 @@ It prints the live values of all three detection signals:
 
 If `captured=false` and both `tcp_estab` and `udp_peered` are also false while a session is clearly running, there is a detection gap. Note the DICT output and file an issue with the output attached.
 
-### Re-grant Accessibility after every rebuild of an ad-hoc build
+### Curtain says it is armed but the cover never appears
 
-Rebuilding the app from source produces a new binary with a new code signature. macOS TCC ties the Accessibility grant to the code signature, so the old grant no longer applies. After rebuilding:
+Almost always a missing Accessibility grant. Curtain refuses to raise a cover it cannot guarantee it can take down, so without that permission it declines to activate and posts a notification — but by default it still arms and only warns at connect time, so the menu bar keeps reporting "armed". Check the Accessibility list first, then use **Activate Now** from the menu-bar icon to confirm the cover rises.
+
+macOS ties the grant to the app's code signature, so it is dropped whenever that signature changes. That happens when **upgrading to v2.0.3 from v2.0.2 or earlier** (ad-hoc to Developer ID — a one-time cost; later updates keep the grant), and after **every rebuild of a local source build**. In either case: 
 
 1. Open System Settings → Privacy & Security → Accessibility.
 2. Remove the old Curtain entry if present, then re-add it.

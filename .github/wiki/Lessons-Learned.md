@@ -139,6 +139,12 @@ Display identity also moved. `CGDisplaySerialNumber` returns 0 for many monitors
 
 The old approach dropped a root helper at `/usr/local/bin/curtain-endsession` with a NOPASSWD sudoers rule. That is replaced by an optional `SMAppService.daemon` plus an XPC connection, off by default. The user opts in, approves the helper once in System Settings, and the disconnect runs through XPC instead of a shell-out to sudo. Nothing privileged is installed unless the feature is enabled.
 
-### Distribution: ad-hoc for v1.0, notarization next
+### Distribution: ad-hoc for v1.0, notarized from v2.0.3
 
-v1.0 ships ad-hoc signed. Gatekeeper requires a one-time quarantine strip after download before the app will launch. The ad-hoc build also cannot register the `SMAppService.daemon`, which is why disconnect-remote-on-end is unavailable until a notarized or Developer-ID build exists. Notarization is planned and will remove both the quarantine step and the daemon limitation.
+v1.0 shipped ad-hoc signed, so Gatekeeper required a one-time quarantine strip after download, and the build could not register the `SMAppService.daemon` that disconnect-remote-on-end depends on. **v2.0.3 is Developer-ID signed and notarized**, which removed both limitations.
+
+Three things were worth learning from actually doing it:
+
+- **Notarizing the app is not enough — the `.dmg` needs it too.** The first notarized build stapled only the app, and Gatekeeper still assessed the `.dmg` as "rejected — no usable signature". The `.dmg` is what the user downloads, so it is what carries the quarantine flag and gets checked first. Sign, notarize and staple both.
+- **Verify credentials before building.** The app-specific password stored for this account returned `HTTP 401` while the App Store Connect API key authenticated cleanly. Checking that first, with a throwaway `notarytool history` call, turned a mid-release failure into a one-line finding.
+- **Moving from ad-hoc to Developer ID clears the Accessibility grant once.** macOS keys TCC permissions to the code signature, so changing it looks like a different app. Curtain still reports itself armed, which makes the loss silent — worth documenting for users rather than letting them discover it when a cover fails to rise. It is a one-time cost: the Developer ID identity is stable, so later updates keep the grant, which ad-hoc rebuilds never did.
