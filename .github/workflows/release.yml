@@ -13,18 +13,110 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Run release pipeline
-        # Scripts/release.sh is env-var-gated (T-P1-E02-01): with these unset it
-        # produces an ad-hoc/unnotarized build and a loud warning instead of
-        # failing. Real values are supplied via repository secrets only — never
-        # hardcoded, never echoed to logs.
+
+      # A GitHub runner starts with no signing identity, so notarizing in CI needs
+      # the Developer ID certificate imported first. It goes into a THROWAWAY
+      # keychain, not the runner's login keychain: the keychain password is a
+      # per-run UUID that is never stored, and the runner is destroyed afterwards.
+      #
+      # Skipped entirely when CURTAIN_CERT_P12 is absent, which leaves the whole
+      # job on its existing ad-hoc path rather than failing. That mirrors how
+      # Scripts/release.sh already degrades, and keeps a fork's tag push working
+      # without access to any secret.
+      - name: Import signing certificate
+        id: import_cert
         env:
-          SIGN_IDENTITY: ${{ secrets.CURTAIN_SIGN_IDENTITY }}
-          CURTAIN_TEAM_ID: ${{ secrets.CURTAIN_TEAM_ID }}
-          CURTAIN_NOTARY_PROFILE: ${{ secrets.CURTAIN_NOTARY_PROFILE }}
-          CURTAIN_NOTARY_APPLE_ID: ${{ secrets.CURTAIN_NOTARY_APPLE_ID }}
-          CURTAIN_NOTARY_APP_PASSWORD: ${{ secrets.CURTAIN_NOTARY_APP_PASSWORD }}
+          CERT_P12: ${{ secrets.CURTAIN_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.CURTAIN_CERT_PASSWORD }}
+        run: |
+          if [[ -z "${CERT_P12:-}" || -z "${CERT_PASSWORD:-}" ]]; then
+            echo "No certificate secrets set — this run will produce an ad-hoc build."
+            echo "signing=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/curtain-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          printf '%s' "$CERT_P12" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$CERT_PATH"
+          # Without this, codesign blocks on a GUI authorization prompt that can
+          # never be answered on a headless runner, and the job hangs until timeout.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Prepend rather than replace, so the system roots needed to validate the
+          # Developer ID chain stay in the search list. Built as an array (no
+          # mapfile — macOS runners still ship bash 3.2) so a keychain path
+          # containing spaces stays a single argument.
+          EXISTING_KEYCHAINS=()
+          while IFS= read -r kc; do
+            kc="${kc//\"/}"
+            kc="${kc#"${kc%%[![:space:]]*}"}"
+            [[ -n "$kc" ]] && EXISTING_KEYCHAINS+=("$kc")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN" "${EXISTING_KEYCHAINS[@]}"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')"
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::Certificate imported but no Developer ID Application identity found."
+            exit 1
+          fi
+          echo "Imported identity: $IDENTITY"
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+          echo "signing=true" >> "$GITHUB_OUTPUT"
+
+      # The App Store Connect API key must exist as a file for notarytool's --key.
+      # Written under RUNNER_TEMP (destroyed with the runner), never into the repo.
+      - name: Stage notary API key
+        id: notary_key
+        if: steps.import_cert.outputs.signing == 'true'
+        env:
+          NOTARY_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NOTARY_KEY:-}" ]]; then
+            echo "::error::Signing is configured but APPLE_API_KEY is not set."
+            exit 1
+          fi
+          KEY_PATH="$RUNNER_TEMP/notary_key.p8"
+          printf '%s' "$NOTARY_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "path=$KEY_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Run release pipeline
+        # Scripts/release.sh is env-var-gated: with SIGN_IDENTITY unset it produces
+        # an ad-hoc/unnotarized build and a loud warning instead of failing. Real
+        # values come from repository secrets only — never hardcoded, never echoed.
+        #
+        # Notarization uses the App Store Connect API key rather than an Apple ID
+        # with an app-specific password: the app-specific password credential for
+        # this account returns HTTP 401, and an API key is the right CI credential
+        # regardless, being a file plus two identifiers with no tie to an
+        # individual Apple ID's 2FA state.
+        env:
+          SIGN_IDENTITY: ${{ steps.import_cert.outputs.identity }}
+          CURTAIN_NOTARY_KEY: ${{ steps.notary_key.outputs.path }}
+          CURTAIN_NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          CURTAIN_NOTARY_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: ./Scripts/release.sh
+
+      # Fail the job rather than publish an artifact that only looks notarized.
+      # release.sh already asserts this locally; repeating it here catches the CI
+      # -specific ways it can go wrong (keychain not unlocked, wrong identity).
+      - name: Verify notarization
+        if: steps.import_cert.outputs.signing == 'true'
+        run: |
+          set -euo pipefail
+          DMG="$(ls dist/Curtain-*.dmg)"
+          spctl -a -t open --context context:primary-signature -vv "$DMG"
+          xcrun stapler validate "$DMG"
+          xcrun stapler validate dist/Curtain.app
+
       - name: Upload release artifact
         # Uploads the .dmg + .sha256 as a CI build artifact only. Deliberately
         # no `gh release create` here — publishing a public GitHub Release is a
@@ -35,3 +127,11 @@ jobs:
           path: |
             dist/Curtain-*.dmg
             dist/Curtain-*.dmg.sha256
+
+      # Best-effort: the runner is ephemeral, but an explicit delete keeps the
+      # identity out of any later step in the same job.
+      - name: Clean up keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/curtain-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary_key.p8" 2>/dev/null || true
