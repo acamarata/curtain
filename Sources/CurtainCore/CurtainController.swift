@@ -87,8 +87,13 @@ final class CurtainController {
         }
 
         // Best-effort regression check that a .none cover is excluded from capture.
-        CurtainController.verifyNoneCoverHidden { ok in
-            if !ok { NSLog("Curtain: SCK self-test — a .none cover was visible in capture (regression)") }
+        // Diagnostics-only: SCShareableContent triggers the Screen Recording permission
+        // prompt (on the desk AND the remote view) the first time it runs, and its result
+        // only goes to the log, so it must never run in normal use.
+        if Settings.diagnosticsLoggingEnabled {
+            CurtainController.verifyNoneCoverHidden { ok in
+                if !ok { NSLog("Curtain: SCK self-test — a .none cover was visible in capture (regression)") }
+            }
         }
     }
 

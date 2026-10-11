@@ -59,6 +59,10 @@ public enum Settings {
         public static let onEndLock = "onEnd.lock"
         public static let onEndScreenOff = "onEnd.screenOff"
         public static let onEndDeactivate = "onEnd.deactivate"
+        /// Lock (and sleep displays) at session end even when the cover never came up
+        /// (Accessibility missing, session shorter than the connect grace, desk unlock
+        /// mid-session). Default on: a remote session always ends in a locked Mac.
+        public static let onEndLockAlways = "onEnd.lockAlways"
         // Security
         public static let onPasswordDisconnect = "onPassword.disconnect"  // legacy bool, kept readable
         public static let onUnlockAction = "onUnlock.action"  // "keepSession" | "disconnect"
@@ -224,6 +228,7 @@ public enum Settings {
             Key.onEndLock: true,
             Key.onEndScreenOff: true,
             Key.onEndDeactivate: true,
+            Key.onEndLockAlways: true,
             Key.onPasswordDisconnect: true,
             Key.passwordBoxTimeoutSeconds: 15,
             Key.requirePasswordToDeactivateFromMenu: false,
@@ -314,6 +319,9 @@ public enum Settings {
             screenOff: d.bool(forKey: Key.onEndScreenOff),
             deactivateCurtain: d.bool(forKey: Key.onEndDeactivate))
     }
+
+    /// True when a session end should lock the Mac even if the cover was never up.
+    public static var onEndLockAlways: Bool { d.bool(forKey: Key.onEndLockAlways) }
 
     // MARK: - Security
     /// On curtain unlock: drop the remote session, or keep it running. Replaces the legacy onPasswordDisconnect bool.

@@ -59,6 +59,12 @@ public final class SessionCoordinator {
     /// when driven by `simulateConnect()` without going through a real monitor.
     private var currentEpisodeID: String?
 
+    /// True from an armed connect until the matching end. Lets `sessionEnded` lock the
+    /// Mac even when the cover never rose (Accessibility missing, session shorter than
+    /// the connect grace, desk unlock mid-session): the end lock keys off "a session
+    /// happened", not off "the cover happened to be up".
+    private var sessionInProgress = false
+
     /// Explicit lifecycle state. Every transition is guarded so it stays idempotent.
     private enum State { case idle, active }
     private var state: State = .idle
@@ -148,6 +154,7 @@ public final class SessionCoordinator {
     private func sessionConnected(episodeID: String? = nil) {
         currentEpisodeID = episodeID
         guard Settings.armed else { return }
+        sessionInProgress = true
         // A real session wins over any in-flight test: keep whatever is on screen.
         testTeardown?.cancel(); testTeardown = nil
         guard Settings.onStartActivate else { return }
@@ -176,7 +183,16 @@ public final class SessionCoordinator {
         guard Settings.armed else { return }
         // If the session never made it past grace, just drop the pending activate.
         connectGrace?.cancel(); connectGrace = nil
+        let hadSession = sessionInProgress
+        sessionInProgress = false
         guard state == .active else {
+            // The cover is not up, so there is nothing to deactivate, but a remote
+            // session just ended: still lock (and sleep the displays) per the end set.
+            let end = Settings.onEnd
+            if hadSession, Settings.onEndLockAlways, end.lock || end.screenOff {
+                Log.event("running end lock without cover", episode: currentEpisodeID)
+                runner.run(ActionSet(lock: end.lock, screenOff: end.screenOff))
+            }
             currentEpisodeID = nil
             return
         }

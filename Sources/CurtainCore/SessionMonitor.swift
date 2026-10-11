@@ -260,6 +260,12 @@ public final class SessionMonitor {
 
     // MARK: - Idle source
 
+    /// kCGAnyInputEventType (~0): "any input event". `.null` (0) is NOT that: it
+    /// reports time since a never-posted event type (tens of thousands of seconds),
+    /// which kept the idle latch from ever arming so idle actions never fired.
+    /// Internal so a regression test can pin the value.
+    nonisolated static let anyInputEventType = CGEventType(rawValue: ~0)!
+
     /// Seconds since the last qualifying input event, from the event system rather
     /// than ioreg.
     ///
@@ -273,7 +279,7 @@ public final class SessionMonitor {
     ///   clock ticks even while the operator types remotely.
     nonisolated private static func idleSeconds() -> Int {
         let source: CGEventSourceStateID = Settings.idleSourceIsHID ? .hidSystemState : .combinedSessionState
-        let seconds = CGEventSource.secondsSinceLastEventType(source, eventType: .null)
+        let seconds = CGEventSource.secondsSinceLastEventType(source, eventType: anyInputEventType)
         guard seconds.isFinite, seconds > 0 else { return 0 }
         return Int(seconds)
     }

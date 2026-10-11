@@ -19,7 +19,7 @@ Your laptop and the desk share one login session, so a window that blocks input 
 
 ## Install
 
-1. Download `Curtain-2.0.3.dmg` from the [Releases](../../releases) page.
+1. Download `Curtain-2.0.4.dmg` from the [Releases](../../releases) page.
 2. Open the DMG and drag `Curtain.app` to Applications.
 3. Launch Curtain. First launch walks you through granting Accessibility, setting an optional password, and installing an optional disconnect helper.
 
@@ -44,10 +44,10 @@ This is the expected, correct step for a source build without a Developer ID, no
 Either way, verify the DMG against its published SHA-256 before installing (the `.sha256` file is attached to the release):
 
 ```bash
-shasum -a 256 -c Curtain-2.0.3.dmg.sha256
+shasum -a 256 -c Curtain-2.0.4.dmg.sha256
 ```
 
-Run it from the directory holding both the `.dmg` and its `.sha256` sidecar; it prints `Curtain-2.0.3.dmg: OK`. (Sidecars for v2.0.2 and later use the standard two-field format that `-c` expects. For v1.0.0 through v2.0.1 the sidecar is a bare hash, so compare it by eye against `shasum -a 256 Curtain-X.Y.Z.dmg` instead.)
+Run it from the directory holding both the `.dmg` and its `.sha256` sidecar; it prints `Curtain-2.0.4.dmg: OK`. (Sidecars for v2.0.2 and later use the standard two-field format that `-c` expects. For v1.0.0 through v2.0.1 the sidecar is a bare hash, so compare it by eye against `shasum -a 256 Curtain-X.Y.Z.dmg` instead.)
 
 The checksum confirms the file you downloaded is byte-for-byte what was published; it protects against a corrupted download or a tampered mirror. It says nothing about whether Apple has scanned or signed the binary. Notarization is a separate, independent guarantee, and from v2.0.3 onward you have both: verify the SHA-256, and let Gatekeeper verify the stapled notarization ticket.
 

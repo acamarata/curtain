@@ -128,37 +128,62 @@ public enum ProcessRunner {
         // T-P1-E10-03's verification pass, not a hypothetical.
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
         do {
             try process.run()
         } catch {
             onLaunchFailure?(error)
             return (Result(output: "", exitCode: -1), false)
         }
+        // Drain stdout on a background queue WHILE the child runs. Reading only after
+        // exit deadlocks any child that writes more than the pipe buffer (64 KB):
+        // `netstat -an` is ~100 KB on a busy Mac, so it blocked on write until the
+        // timeout killed it and the caller got a truncated result 5 s late.
+        let drain = PipeDrain(pipe.fileHandleForReading)
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning && Date() < deadline {
             usleep(useconds_t(pollInterval * 1_000_000))
         }
+        var timedOut = false
         if process.isRunning {
+            timedOut = true
             process.terminate()
-            // `terminate()` only sends SIGTERM; it does not block until the
-            // process has actually exited. Reading `terminationStatus` before
-            // the exit is observed throws NSInvalidArgumentException ("task
-            // still running") — a real crash hit by CaptureProbe's shell-out
-            // watchdog (T-P1-E05-02) the first time a probe genuinely hung.
-            // `waitUntilExit()` here is bounded: SIGTERM reliably ends
-            // `sleep`/`netstat`/`pgrep`-class children immediately, so this
-            // does not reintroduce an unbounded block.
+            // `terminate()` only sends SIGTERM; it does not block until the process has
+            // actually exited. Reading `terminationStatus` before the exit is observed
+            // throws NSInvalidArgumentException ("task still running") — a real crash
+            // hit by CaptureProbe's shell-out watchdog (T-P1-E05-02). Bounded: SIGTERM
+            // reliably ends `sleep`/`netstat`/`pgrep`-class children immediately.
             process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return (Result(output: output, exitCode: process.terminationStatus), true)
         }
-        // Read after confirming exit (not while still running) so this never
-        // blocks past the deadline already enforced by the poll loop above.
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
-        return (Result(output: output, exitCode: process.terminationStatus), false)
+        // Bounded wait: if a grandchild still holds the pipe open, return what we have
+        // rather than block the caller past its own deadline.
+        return (Result(output: drain.finish(waitingUpTo: 2), exitCode: process.terminationStatus), timedOut)
+    }
+
+    /// Reads a pipe to EOF on a background queue so the child never blocks on a full
+    /// buffer. `finish` waits (bounded) for EOF and returns everything read so far.
+    private final class PipeDrain: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+        private let group = DispatchGroup()
+
+        init(_ handle: FileHandle) {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                while true {
+                    let chunk = handle.availableData
+                    if chunk.isEmpty { break }
+                    lock.lock(); data.append(chunk); lock.unlock()
+                }
+                group.leave()
+            }
+        }
+
+        func finish(waitingUpTo seconds: TimeInterval) -> String {
+            _ = group.wait(timeout: .now() + seconds)
+            lock.lock(); defer { lock.unlock() }
+            return String(decoding: data, as: UTF8.self)
+        }
     }
 
     /// Fire-and-forget: launch a process and return immediately without waiting

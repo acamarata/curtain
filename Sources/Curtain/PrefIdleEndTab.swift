@@ -20,6 +20,7 @@ struct PrefIdleEndTab: View {
     @AppStorage(Settings.Key.onEndLock) private var endLock = true
     @AppStorage(Settings.Key.onEndScreenOff) private var endScreenOff = true
     @AppStorage(Settings.Key.onEndDeactivate) private var endDeactivate = true
+    @AppStorage(Settings.Key.onEndLockAlways) private var endLockAlways = true
 
     var body: some View {
         Form {
@@ -60,6 +61,7 @@ struct PrefIdleEndTab: View {
                 Toggle("Lock the Mac", isOn: $endLock)
                 Toggle("Turn off the displays", isOn: $endScreenOff)
                 Toggle("Deactivate the curtain", isOn: $endDeactivate)
+                Toggle("Also lock when the curtain never came up", isOn: $endLockAlways)
             } header: {
                 Text("When the remote session disconnects")
             } footer: {

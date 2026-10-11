@@ -54,6 +54,8 @@ Screen Sharing connects (CGSSessionScreenIsCaptured == true, local console)
           Deactivate curtain
 ```
 
+If the cover never came up (for example Accessibility is not granted), the disconnect still locks the Mac and sleeps the displays; the "Also lock when the curtain never came up" setting controls this.
+
 All the actions at idle and on disconnect are individually toggleable in settings.
 
 ## Session detection

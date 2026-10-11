@@ -432,6 +432,7 @@ struct PreferencesView: View {
         Settings.Key.onIdleDisconnect, Settings.Key.onIdleLock, Settings.Key.onIdleScreenOff,
         Settings.Key.onIdleDeactivate,
         Settings.Key.onEndLock, Settings.Key.onEndScreenOff, Settings.Key.onEndDeactivate,
+        Settings.Key.onEndLockAlways,
         Settings.Key.onUnlockAction, Settings.Key.passwordBoxTimeoutSeconds,
         Settings.Key.requirePasswordToDeactivateFromMenu, Settings.Key.accessibilityMissingBehavior,
         Settings.Key.disconnectFeatureEnabled,

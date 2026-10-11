@@ -143,8 +143,51 @@ final class PasswordBox: NSView {
         if Date().timeIntervalSince1970 > hideAt { isHidden = true }
     }
 
+    /// What a key-down means for the box, given whether the box was hidden when it
+    /// arrived. Pure so it is unit testable.
+    enum KeyDisposition: Equatable {
+        /// Drop the key (Esc on a box that is not showing).
+        case ignore
+        /// Raise the box but do not feed the key into the password buffer.
+        case revealOnly
+        /// Normal handling (and type-through when the box was hidden).
+        case process
+    }
+
+    /// A hidden box is raised by the key. Return/Enter/Delete only raise it (a bare
+    /// Return must not count as a failed attempt toward lockout), Esc is ignored, and
+    /// in reveal-combo mode the combo's own letter must never become the first
+    /// character of the password. In any-key mode a plain character types through, so
+    /// the user can start typing the password immediately.
+    nonisolated static func disposition(wasHidden: Bool, revealOnAnyKey: Bool, keycode: Int) -> KeyDisposition {
+        guard wasHidden else { return .process }
+        switch keycode {
+        case 53: return .ignore
+        case 36, 76, 51: return .revealOnly
+        default: return revealOnAnyKey ? .process : .revealOnly
+        }
+    }
+
+    /// Characters accepted into the password buffer. Includes the plain space: it is a
+    /// legal password character, and refusing it locked out anyone who set a passphrase.
+    nonisolated static func isTypable(_ chars: String?) -> Bool {
+        guard let ch = chars?.first else { return false }
+        return ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol || ch == " "
+    }
+
     func key(keycode: Int, chars: String?) {
-        if isHidden { reveal() }
+        let wasHidden = isHidden
+        switch Self.disposition(wasHidden: wasHidden, revealOnAnyKey: Settings.revealOnAnyKey, keycode: keycode) {
+        case .ignore:
+            return
+        case .revealOnly:
+            reveal()
+            bump()
+            if Settings.isLockedOut { showLockout() }
+            return
+        case .process:
+            if wasHidden { reveal() }
+        }
         bump()
 
         if Settings.isLockedOut { showLockout(); return }
@@ -161,7 +204,7 @@ final class PasswordBox: NSView {
             if !buffer.isEmpty { buffer.removeLast() }
             refreshMaskedDisplay(); err.isHidden = true
         default:
-            if let c = chars, let ch = c.first, ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol {
+            if Self.isTypable(chars), let c = chars {
                 buffer += c
                 refreshMaskedDisplay(); err.isHidden = true
             }

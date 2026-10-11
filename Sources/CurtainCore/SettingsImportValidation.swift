@@ -53,6 +53,7 @@ public enum SettingsImportValidation {
         Settings.Key.onIdleDisconnect, Settings.Key.onIdleLock, Settings.Key.onIdleScreenOff,
         Settings.Key.onIdleDeactivate,
         Settings.Key.onEndLock, Settings.Key.onEndScreenOff, Settings.Key.onEndDeactivate,
+        Settings.Key.onEndLockAlways,
         Settings.Key.requirePasswordToDeactivateFromMenu, Settings.Key.disconnectFeatureEnabled,
         Settings.Key.diagnosticsLoggingEnabled
     ]

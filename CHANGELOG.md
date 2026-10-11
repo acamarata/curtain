@@ -6,6 +6,41 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-10-11
+
+Reliability release. Found by running the app's own code paths on a macOS 27 Mac with five
+displays; each item below was reproduced before it was fixed.
+
+### Fixed
+
+- **Idle timeout never fired.** Idle time was read with event type `.null` (0), which returned
+  about 22 hours on a live Mac, so the "below threshold" reading that arms the idle latch never
+  happened and idle disconnect / lock / screen-off never ran. It now uses the any-input event
+  type (`~0`).
+- **Session detection stalled 5 seconds per poll.** The bounded-timeout process runner read
+  stdout only after the child exited. `netstat -an` writes about 100 KB on a busy Mac, which
+  fills the 64 KB pipe, so netstat blocked until the timeout killed it and the monitor got a
+  truncated result five seconds late. Polling slowed to roughly 7 seconds and noticing a
+  session end took about 20 seconds instead of 6. The pipe is now drained while the child runs
+  (`netstat` returns in about 60 ms), with regression tests for output larger than the buffer.
+- **The Mac was not locked after a session unless the curtain had been up.** The end actions
+  only ran when the cover was active, so a session with Accessibility missing, one shorter than
+  the connect delay, or one where the desk password was entered mid-session ended unlocked.
+- **The ScreenCaptureKit cover self-test ran on every activation.** It triggers the Screen
+  Recording permission prompt (on the desk and the remote view) and only wrote to the log. It
+  now runs only with diagnostics logging enabled.
+- **Password box.** The key that raised the box was typed into the password, so with a reveal
+  combo the combo's letter became the first character; a bare Return on a hidden box counted as
+  a failed attempt toward lockout; and a space could not be typed, locking out anyone who set a
+  passphrase. A hidden box is now raised by Return/Enter/Delete without side effects, ignores
+  Esc, never types the reveal combo's key, and accepts spaces.
+
+### Added
+
+- **"Also lock when the curtain never came up"** (Settings > Idle & End, default on, key
+  `onEnd.lockAlways`). Locks and sleeps the displays at the end of every remote session whose
+  cover did not rise. Exportable and validated like the other preferences.
+
 ## [2.0.3] - 2026-08-18
 
 **Curtain is now signed with a Developer ID and notarized by Apple.** Both the `.dmg` and the

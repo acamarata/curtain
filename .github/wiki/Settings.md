@@ -171,6 +171,7 @@ These actions fire when a remote session is detected as dropped.
 - **Lock** — locks the Mac when the session ends.
 - **Turn off displays** — sleeps the displays after locking.
 - **Deactivate** — hides the cover and removes the input block. If left off, the cover stays up after the remote disconnects.
+- **Also lock when the curtain never came up** — locks (and sleeps the displays) at the end of every remote session, even if the cover never rose: Accessibility not granted, a session shorter than the connect delay, or a desk-password unlock mid-session. Added in v2.0.4. Turn it off to lock only after sessions that were covered.
 
 Defaults: all **on**.
 

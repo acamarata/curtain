@@ -306,3 +306,102 @@ private final class SpyActionRunner: ActionRunning {
         if set.activateCurtain { activateCover() }
     }
 }
+
+// MARK: - Lock on every session end (v2.0.4)
+
+@MainActor
+final class SessionCoordinatorEndLockTests: XCTestCase {
+    private var suiteName: String!
+    private var originalDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "SessionCoordinatorEndLockTests.\(UUID().uuidString)"
+        originalDefaults = Settings.d
+        let isolated = UserDefaults(suiteName: suiteName)!
+        isolated.removePersistentDomain(forName: suiteName)
+        Settings.d = isolated
+        Settings.registerDefaults()
+        Settings.armed = true
+    }
+
+    override func tearDown() {
+        Settings.d.removePersistentDomain(forName: suiteName)
+        Settings.d = originalDefaults
+        UserDefaults.standard.removePersistentDomain(forName: suiteName)
+        super.tearDown()
+    }
+
+    /// Accessibility missing: the cover never rises, but the Mac must still lock at the end.
+    func testEndLocksWhenCoverNeverCameUp() {
+        let spy = SpyActionRunner()
+        let sut = SessionCoordinator(runner: spy)
+        sut.isAccessibilityTrusted = { false }
+        sut.simulateConnect()
+        sut.simulateDisconnect()
+
+        XCTAssertFalse(sut.isActive)
+        XCTAssertEqual(spy.runCalls.count, 1)
+        XCTAssertTrue(spy.runCalls[0].lock)
+        XCTAssertTrue(spy.runCalls[0].screenOff)
+        XCTAssertFalse(spy.runCalls[0].deactivateCurtain, "no cover to take down")
+        XCTAssertEqual(spy.deactivateCoverCount, 0)
+    }
+
+    /// Desk-password unlock mid-session drops the cover; the end still locks.
+    func testEndLocksAfterDeskUnlockMidSession() {
+        let spy = SpyActionRunner()
+        let sut = SessionCoordinator(runner: spy)
+        sut.isAccessibilityTrusted = { true }
+        sut.activateNow()
+        sut.simulateConnect()
+        sut.simulatePasswordUnlock()
+        XCTAssertFalse(sut.isActive)
+
+        sut.simulateDisconnect()
+        XCTAssertEqual(spy.runCalls.filter { $0.lock }.count, 1)
+    }
+
+    func testEndLockAlwaysCanBeDisabled() {
+        Settings.d.set(false, forKey: Settings.Key.onEndLockAlways)
+        let spy = SpyActionRunner()
+        let sut = SessionCoordinator(runner: spy)
+        sut.isAccessibilityTrusted = { false }
+        sut.simulateConnect()
+        sut.simulateDisconnect()
+        XCTAssertTrue(spy.runCalls.isEmpty)
+    }
+
+    func testEndLockRespectsLockToggleOff() {
+        Settings.d.set(false, forKey: Settings.Key.onEndLock)
+        Settings.d.set(false, forKey: Settings.Key.onEndScreenOff)
+        let spy = SpyActionRunner()
+        let sut = SessionCoordinator(runner: spy)
+        sut.isAccessibilityTrusted = { false }
+        sut.simulateConnect()
+        sut.simulateDisconnect()
+        XCTAssertTrue(spy.runCalls.isEmpty)
+    }
+
+    /// A disconnect with no preceding armed connect (e.g. stale callback) must not lock.
+    func testDisconnectWithoutSessionDoesNotLock() {
+        let spy = SpyActionRunner()
+        let sut = SessionCoordinator(runner: spy)
+        sut.simulateDisconnect()
+        XCTAssertTrue(spy.runCalls.isEmpty)
+    }
+
+    /// Active-cover path is unchanged: one run with the full end set, no extra lock.
+    func testActiveCoverEndStillRunsFullEndSetOnce() {
+        let spy = SpyActionRunner()
+        let sut = SessionCoordinator(runner: spy)
+        sut.isAccessibilityTrusted = { true }
+        sut.activateNow()
+        sut.simulateConnect()
+        sut.simulateDisconnect()
+        XCTAssertEqual(spy.runCalls.count, 1)
+        XCTAssertTrue(spy.runCalls[0].lock)
+        XCTAssertTrue(spy.runCalls[0].deactivateCurtain)
+        XCTAssertFalse(sut.isActive)
+    }
+}
