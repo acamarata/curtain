@@ -10,7 +10,7 @@ import SwiftUI
 /// Outputs: side effects only. On finish it sets Settings.hasOnboarded = true,
 ///          applies LoginItem.set(Settings.launchAtLogin), and closes the window.
 /// Constraints: AppKit + SwiftUI are @MainActor. The Accessibility step polls
-///              AXIsProcessTrusted() on a ~1s timer; that timer is invalidated
+///              AccessibilityPermission.isGranted on a ~1s timer; that timer is invalidated
 ///              when the user leaves step 2 or the window closes, so it never
 ///              leaks. The window is reused if show() is called again and is not
 ///              released on close so the controller can re-present it.
@@ -28,8 +28,7 @@ final class OnboardingWindowController {
     /// Present the onboarding window, building it on first use and reusing it after.
     func show() {
         if let window {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            WindowFronting.bringToFront(window)
             return
         }
 
@@ -51,8 +50,7 @@ final class OnboardingWindowController {
         win.center()
 
         self.window = win
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        WindowFronting.bringToFront(win)
     }
 
     private func completeOnboarding() {
@@ -73,7 +71,7 @@ private struct OnboardingView: View {
     let finish: () -> Void
 
     @State private var step: Step = .welcome
-    @State private var axTrusted: Bool = AXIsProcessTrusted()
+    @State private var axTrusted: Bool = AccessibilityPermission.isGranted
     @State private var axTimer: Timer?
 
     @State private var disconnectOn = false
@@ -142,41 +140,25 @@ private struct OnboardingView: View {
     // MARK: Step 2 — Accessibility (required)
 
     private var accessibilityStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Allow Curtain to block desk input")
-                .font(.title3.weight(.semibold))
-            Text(
-                "Curtain needs Accessibility permission so it can capture the keyboard and mouse at your desk. Without it, your screen can be covered but input is not blocked."
-            )
-            .foregroundStyle(.secondary)
-
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(axTrusted ? Color.green : Color.red)
-                    .frame(width: 10, height: 10)
-                Text(axTrusted ? "Permission granted" : "Permission not granted yet")
-                    .font(.callout)
+        OnboardingAccessibilityStep(
+            trusted: axTrusted,
+            skip: {
+                stopAXPoll(); step = .disconnect
+            },
+            proceed: {
+                stopAXPoll(); step = .disconnect
             }
-
-            Button("Open Accessibility Settings") { openAXSettings() }
-
-            Spacer()
-            HStack {
-                Button("Skip for now") {
-                    stopAXPoll()
-                    step = .disconnect
-                }
-                .help("Curtain will not be able to block keyboard and mouse input.")
-                Spacer()
-                Button("Continue") {
-                    stopAXPoll()
-                    step = .disconnect
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!axTrusted)
+        )
+        .onAppear { startAXPoll() }
+        .onChange(of: axTrusted) { granted in
+            // The switch is flipped in System Settings, so pull Curtain's window back to the
+            // front and move on by itself once the grant is live.
+            guard granted, step == .accessibility else { return }
+            WindowFronting.activateApp()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                if step == .accessibility { stopAXPoll(); step = .disconnect }
             }
         }
-        .onAppear { startAXPoll() }
     }
 
     // MARK: Step 3 — Disconnect helper (optional, off)
@@ -294,25 +276,15 @@ private struct OnboardingView: View {
     // MARK: AX polling
 
     private func startAXPoll() {
-        axTrusted = AXIsProcessTrusted()
+        axTrusted = AccessibilityPermission.isGranted
         axTimer?.invalidate()
         axTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            Task { @MainActor in axTrusted = AXIsProcessTrusted() }
+            Task { @MainActor in axTrusted = AccessibilityPermission.isGranted }
         }
     }
 
     private func stopAXPoll() {
         axTimer?.invalidate()
         axTimer = nil
-    }
-
-    private func openAXSettings() {
-        // macOS 13+ Privacy pane URL; the legacy ?Privacy_Accessibility query-string form
-        // stopped reliably opening the Accessibility row on Ventura+ and is dropped here.
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.Privacy-Accessibility-Settings") else {
-            NSLog("Curtain: failed to construct Accessibility settings URL")
-            return
-        }
-        NSWorkspace.shared.open(url)
     }
 }

@@ -132,6 +132,9 @@ public final class SessionCoordinator {
     /// Throttled (~60s) prompt shown when an activation is refused because Accessibility
     /// isn't granted. Without the tap the cover can't be unlocked at the desk.
     private func notifyAccessibilityNeeded() {
+        // Also raise the system prompt itself (throttled): it lists Curtain in Settings and
+        // is visible over a remote session, so the permission can be granted on the spot.
+        AccessibilityPermission.promptIfDue()
         Notifier.post(
             title: "Curtain",
             body:

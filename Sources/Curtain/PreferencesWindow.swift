@@ -28,7 +28,7 @@ final class PreferencesWindowController {
     init(coordinator: SessionCoordinator) { self.coordinator = coordinator }
 
     func show() {
-        if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        if let w = window { WindowFronting.bringToFront(w); return }
         let view = PreferencesView(
             activateNow: { [weak coordinator] in coordinator?.activateNow() },
             testNow: { [weak coordinator] in coordinator?.testCurtain(seconds: 10) },
@@ -49,7 +49,7 @@ final class PreferencesWindowController {
         w.contentMinSize = NSSize(width: 600, height: 520)
         w.center(); w.isReleasedWhenClosed = false
         window = w
-        w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        WindowFronting.bringToFront(w)
     }
 
     // MARK: - Display helpers (shared with the menu)

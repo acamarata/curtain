@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import CurtainCore
 
@@ -19,6 +20,8 @@ struct PrefSecurityTab: View {
     @AppStorage(Settings.Key.accessibilityMissingBehavior) private var accessibilityMissing = "warn"
     @AppStorage(Settings.Key.kvmActivityNotificationEnabled) private var kvmActivityNotificationEnabled = false
 
+    @State private var axGranted = AccessibilityPermission.isGranted
+    private let axRefresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     @State private var newPassword = ""
     @State private var saveFailed = false
     @Binding var hasPassword: Bool
@@ -50,6 +53,23 @@ struct PrefSecurityTab: View {
                 }
             }
             Section {
+                HStack {
+                    Circle().fill(axGranted ? Color.green : Color.red).frame(width: 10, height: 10)
+                    Text(axGranted ? "Accessibility granted" : "Accessibility not granted")
+                    Spacer()
+                    if !axGranted {
+                        Button("Grant Access…") { AccessibilityPermission.requestAndOpenSettings() }
+                    }
+                }
+                if !axGranted {
+                    Text("Switch Curtain on in \(AccessibilityPermission.paneNameHint).")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Reset a stale entry and ask again") {
+                        AccessibilityPermission.resetStaleGrant()
+                        AccessibilityPermission.requestAndOpenSettings()
+                    }
+                    .font(.caption)
+                }
                 Picker("If Accessibility is missing", selection: $accessibilityMissing) {
                     Text("Warn and arm anyway").tag("warn")
                     Text("Refuse to arm").tag("refuseToArm")
@@ -107,6 +127,7 @@ struct PrefSecurityTab: View {
             }
         }
         .formStyle(.grouped)
+        .onReceive(axRefresh) { _ in axGranted = AccessibilityPermission.isGranted }
     }
 
     private func warn(_ text: String) -> some View {

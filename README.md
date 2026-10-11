@@ -19,13 +19,13 @@ Your laptop and the desk share one login session, so a window that blocks input 
 
 ## Install
 
-1. Download `Curtain-2.0.4.dmg` from the [Releases](../../releases) page.
+1. Download `Curtain-2.0.5.dmg` from the [Releases](../../releases) page.
 2. Open the DMG and drag `Curtain.app` to Applications.
 3. Launch Curtain. First launch walks you through granting Accessibility, setting an optional password, and installing an optional disconnect helper.
 
 Releases from v2.0.3 onward are signed with a Developer ID and notarized by Apple, and both the `.dmg` and the app inside it carry a stapled notarization ticket. Gatekeeper accepts them on first open with no workaround, and the check works offline. Earlier releases (v1.0.0 through v2.0.2) were ad-hoc signed and needed `xattr -dr com.apple.quarantine /Applications/Curtain.app` once after install; if you are still on one of those, upgrading removes that step for good.
 
-**v2.0.4 note:** this release is Developer ID signed but not yet notarized (Apple's notary service was rejecting submissions). On first open, right-click the app and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Curtain.app` once. A notarized build will replace the assets under the same tag.
+**v2.0.4 and later note:** these releases are Developer ID signed but not yet notarized (Apple's notary service was rejecting submissions). On first open, right-click the app and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Curtain.app` once. A notarized build will replace the assets under the same tag.
 
 Curtain needs Accessibility permission to block desk input, so grant it when prompted (System Settings, Privacy & Security, Accessibility). If Accessibility is not granted, Curtain refuses to show the cover and notifies you, rather than putting up a screen it cannot unlock.
 

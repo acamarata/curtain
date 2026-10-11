@@ -6,6 +6,38 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-10-11
+
+Setup release: asking for the Accessibility permission now works the way a user expects.
+Found by walking the v2.0.4 wizard on macOS 27.
+
+### Fixed
+
+- **The wizard's Settings link opened nothing on macOS 27.** The link it used
+  (`com.apple.Privacy-Accessibility-Settings`) did not open a window. Two other links land on
+  the list, so the helper now tries `com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility`,
+  then `com.apple.preference.security?Privacy_Accessibility`, then plain System Settings.
+- **The wizard never asked macOS for the permission.** It only opened a pane, so Curtain was
+  not listed until something else touched Accessibility. It now calls the system prompt
+  (`AXIsProcessTrustedWithOptions`), which lists Curtain and offers "Open System Settings".
+- **The wizard's wording did not match the screen.** On macOS 27 the list is titled "Device
+  Control and Data Access". The text now names both titles.
+- **The setup window could open behind the frontmost app.** A menu-bar app launched while
+  another app is in front often failed to raise its window. Setup and Settings windows now
+  switch the app to regular activation while open and return to menu-bar mode on close.
+
+### Added
+
+- **One-click grant.** The Accessibility step has "Grant Access…" (system prompt, then the exact
+  Settings list), "Open Settings Only", and, after 10 seconds without a grant, "Reset and ask
+  again" for the stale-entry case where the switch reads ON but the grant is not live. The step
+  continues by itself, and brings the window back to the front, when the grant lands.
+- **"Grant Accessibility…" in the menu bar menu** while the permission is missing, and a status row
+  with the same buttons in Settings > Security.
+- **The system prompt now appears at the moment of need.** When an activation is refused because
+  Accessibility is missing, the prompt is raised (at most once per 10 minutes), also visible over
+  a remote session.
+
 ## [2.0.4] - 2026-10-11
 
 Reliability release. Found by running the app's own code paths on a macOS 27 Mac with five

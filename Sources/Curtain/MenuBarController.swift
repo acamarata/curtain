@@ -5,9 +5,10 @@ import CurtainCore
 ///          Reflects active + armed state and routes actions to the coordinator.
 /// SPORT: MASTER-MENUBAR
 @MainActor
-final class MenuBarController: NSObject {
+final class MenuBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var armedItem: NSMenuItem?
+    private var grantItem: NSMenuItem?
     private weak var coordinator: SessionCoordinator?
     // Latest known active/armed flags, tracked independently so reflect(active:)
     // and reflect(armed:) — which each only receive one half of the state — can
@@ -26,6 +27,10 @@ final class MenuBarController: NSObject {
         item.button?.image = CurtainIcon.menuBarImage()
         item.button?.setAccessibilityLabel("Curtain")
         let menu = NSMenu()
+        menu.delegate = self
+        // Shown only while Accessibility is missing (see menuWillOpen).
+        grantItem = add(menu, "Grant Accessibility…", #selector(grantAccessibility))
+        grantItem?.isHidden = AccessibilityPermission.isGranted
         add(menu, "Open Curtain Settings…", #selector(openSettings))
         add(menu, "Setup…", #selector(openSetup))
         menu.addItem(.separator())
@@ -57,6 +62,7 @@ final class MenuBarController: NSObject {
         if let i = statusItem { NSStatusBar.system.removeStatusItem(i) }
         statusItem = nil
         armedItem = nil
+        grantItem = nil
     }
 
     /// Update the icon to reflect active/idle. Active = highlighted (non-template).
@@ -95,6 +101,11 @@ final class MenuBarController: NSObject {
         item.target = self; menu.addItem(item); return item
     }
 
+    /// Re-evaluate the Accessibility entry each time the menu opens, so it appears the moment
+    /// the grant is lost and disappears once it is back.
+    func menuWillOpen(_ menu: NSMenu) { grantItem?.isHidden = AccessibilityPermission.isGranted }
+
+    @objc private func grantAccessibility() { AccessibilityPermission.requestAndOpenSettings() }
     @objc private func openSettings() { onOpenSettings?() }
     @objc private func openSetup() { onOpenSetup?() }
     @objc private func toggleArmed() {
