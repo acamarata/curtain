@@ -45,6 +45,12 @@ SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 # starts returning "HTTP 401 Invalid credentials" once revoked or regenerated —
 # a failure that otherwise only surfaces mid-release, after a full signed build.
 # Real values are supplied by the maintainer's environment, never hardcoded here.
+# CURTAIN_SKIP_NOTARIZE=1 builds a Developer ID SIGNED but NOT notarized release (for
+# when Apple's notary service is unavailable, e.g. an expired agreement returns 403).
+# The result is still hardened-runtime signed with a stable identity, so the user's
+# Accessibility grant survives the later notarized build, but Gatekeeper will make a
+# downloader approve it once (right-click > Open, or `xattr -dr com.apple.quarantine`).
+CURTAIN_SKIP_NOTARIZE="${CURTAIN_SKIP_NOTARIZE:-}"
 CURTAIN_TEAM_ID="${CURTAIN_TEAM_ID:-}"
 CURTAIN_NOTARY_PROFILE="${CURTAIN_NOTARY_PROFILE:-}"
 CURTAIN_NOTARY_KEY="${CURTAIN_NOTARY_KEY:-}"
@@ -210,6 +216,8 @@ codesign --force --options runtime --timestamp \
 #     a real signing identity.
 if [[ -z "$SIGN_IDENTITY" || "$SIGN_IDENTITY" == "-" ]]; then
   echo "==> WARNING: ad-hoc/unnotarized build. Set SIGN_IDENTITY plus notary credentials (CURTAIN_NOTARY_PROFILE, or CURTAIN_NOTARY_KEY+CURTAIN_NOTARY_KEY_ID+CURTAIN_NOTARY_ISSUER, or CURTAIN_NOTARY_APPLE_ID+CURTAIN_TEAM_ID+CURTAIN_NOTARY_APP_PASSWORD) to produce a notarized release."
+elif [[ -n "$CURTAIN_SKIP_NOTARIZE" ]]; then
+  echo "==> CURTAIN_SKIP_NOTARIZE set: Developer ID signed, NOT notarized."
 else
   NOTARY_AUTH_ARGS=()
   if [[ -n "$CURTAIN_NOTARY_PROFILE" ]]; then
@@ -270,9 +278,11 @@ rm -rf "$(dirname "$STAGE")"
 if [[ -n "$SIGN_IDENTITY" && "$SIGN_IDENTITY" != "-" ]]; then
   echo "==> Signing $DMG"
   codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"
-  echo "==> Notarizing $DMG"
-  xcrun notarytool submit "$DMG" "${NOTARY_AUTH_ARGS[@]}" --wait
-  xcrun stapler staple "$DMG"
+  if [[ -z "$CURTAIN_SKIP_NOTARIZE" ]]; then
+    echo "==> Notarizing $DMG"
+    xcrun notarytool submit "$DMG" "${NOTARY_AUTH_ARGS[@]}" --wait
+    xcrun stapler staple "$DMG"
+  fi
 fi
 
 # Emit the standard "<hash>  <filename>" two-field format (not a bare hash), and use the
@@ -304,6 +314,12 @@ if [[ -z "$SIGN_IDENTITY" || "$SIGN_IDENTITY" == "-" ]]; then
   echo "Note: an ad-hoc build is unnotarized. End users opening the .dmg may need to"
   echo "strip the quarantine flag once:  xattr -dr com.apple.quarantine /Applications/Curtain.app"
   echo "Set SIGN_IDENTITY plus a notary credential source to remove that step."
+elif [[ -n "$CURTAIN_SKIP_NOTARIZE" ]]; then
+  echo "==> spctl assessment (Developer ID signed, not notarized: a quarantined download is rejected until approved once):"
+  spctl -a -vv "$APP" 2>&1 | sed 's/^/    /' || true
+  echo
+  echo "Note: this build is signed but NOT notarized. Downloaders approve it once via"
+  echo "right-click > Open, or:  xattr -dr com.apple.quarantine /Applications/Curtain.app"
 else
   echo "==> spctl assessment — app (expect: accepted, Notarized Developer ID):"
   spctl -a -vv "$APP" 2>&1 | sed 's/^/    /' || true

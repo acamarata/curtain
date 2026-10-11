@@ -35,6 +35,18 @@ displays; each item below was reproduced before it was fixed.
   passphrase. A hidden box is now raised by Return/Enter/Delete without side effects, ignores
   Esc, never types the reveal combo's key, and accepts spaces.
 
+### Distribution
+
+- **v2.0.4 is Developer ID signed but not yet notarized.** Apple's notary service returned
+  HTTP 403 ("a required agreement is missing or has expired") for the whole release window, so
+  the `.dmg` and app are signed with the same Developer ID as v2.0.3 and hardened-runtime
+  enabled, but carry no notarization ticket. Approve the first open once (right-click > Open,
+  or `xattr -dr com.apple.quarantine /Applications/Curtain.app`). Accessibility grants carry
+  over to the notarized build because the signing identity is unchanged. The notarized assets
+  will replace these under the same tag once Apple's side is cleared.
+- `Scripts/release.sh` gained `CURTAIN_SKIP_NOTARIZE=1` for exactly this case: sign with the
+  Developer ID, skip notarization and stapling, and say so in the summary.
+
 ### Added
 
 - **"Also lock when the curtain never came up"** (Settings > Idle & End, default on, key
