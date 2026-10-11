@@ -6,6 +6,14 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-11
+
+### Fixed
+
+- **The padlock icon overlapped the "Enter password" text** in the password box (seen on the first
+  live run of the padlock screen). The box is taller and the glyph has its own row. Verified by
+  rendering the box offscreen.
+
 ## [2.2.0] - 2026-10-11
 
 ### Fixed

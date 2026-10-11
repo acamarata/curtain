@@ -73,7 +73,7 @@ final class PasswordBox: NSView {
     }
 
     private func build() {
-        let pw = 380.0, ph = 196.0
+        let pw = 380.0, ph = 244.0
         let box = NSView(frame: NSRect(x: (frame.width - pw) / 2, y: (frame.height - ph) / 2, width: pw, height: ph))
         box.wantsLayer = true
         box.layer?.backgroundColor = NSColor(white: 0.10, alpha: 0.98).cgColor
@@ -87,21 +87,23 @@ final class PasswordBox: NSView {
             t.textColor = c; t.backgroundColor = .clear; t.isBezeled = false; t.isEditable = false
             t.font = .systemFont(ofSize: sz, weight: .medium); box.addSubview(t); return t
         }
-        let glyph = label("🔒", 144, 38, .white)
+        // The glyph needs more height than the 34pt text rows: at 38pt it overlapped the prompt below it.
+        let glyph = label("🔒", 186, 38, .white)
+        glyph.frame.size.height = 52
         glyph.setAccessibilityElement(false)  // decorative; the prompt label carries the announcement
 
-        prompt.frame = NSRect(x: 10, y: 120, width: pw - 20, height: 34); prompt.alignment = .center
+        prompt.frame = NSRect(x: 10, y: 142, width: pw - 20, height: 34); prompt.alignment = .center
         prompt.textColor = NSColor(white: 0.85, alpha: 1); prompt.backgroundColor = .clear
         prompt.isBezeled = false; prompt.isEditable = false; prompt.font = .systemFont(ofSize: 14, weight: .medium)
         box.addSubview(prompt)
 
-        let field = NSView(frame: NSRect(x: 90, y: 82, width: 200, height: 30))
+        let field = NSView(frame: NSRect(x: 90, y: 100, width: 200, height: 30))
         field.wantsLayer = true; field.layer?.backgroundColor = NSColor(white: 0.20, alpha: 1).cgColor
         field.layer?.cornerRadius = 6; box.addSubview(field)
-        dots.frame = NSRect(x: 90, y: 84, width: 200, height: 26); dots.alignment = .center
+        dots.frame = NSRect(x: 90, y: 102, width: 200, height: 26); dots.alignment = .center
         dots.textColor = .white; dots.backgroundColor = .clear; dots.isBezeled = false; dots.isEditable = false
         dots.font = .systemFont(ofSize: 18); box.addSubview(dots)
-        err.frame = NSRect(x: 10, y: 56, width: pw - 20, height: 18); err.alignment = .center
+        err.frame = NSRect(x: 10, y: 70, width: pw - 20, height: 18); err.alignment = .center
         err.textColor = NSColor(red: 1, green: 0.4, blue: 0.4, alpha: 1); err.backgroundColor = .clear
         err.isBezeled = false; err.isEditable = false; err.font = .systemFont(ofSize: 12); err.isHidden = true
         box.addSubview(err)
@@ -336,7 +338,7 @@ final class PasswordBox: NSView {
         let want = !isHidden && assistiveTechRunning
         if want, accessibleField == nil {
             let f = AccessibleField(owner: self)
-            f.frame = NSRect(x: 90, y: 84, width: 200, height: 26)
+            f.frame = NSRect(x: 90, y: 102, width: 200, height: 26)
             // Add to the same visual slot as `dots` so sighted+VoiceOver users see
             // one coherent field, not two overlapping controls.
             if let box = dots.superview { box.addSubview(f, positioned: .above, relativeTo: dots) }
