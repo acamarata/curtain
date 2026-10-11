@@ -16,6 +16,7 @@ struct PrefSecurityTab: View {
     // FIX-5: default literal aligned to registerDefaults ("keepSession" -> "disconnect")
     @AppStorage(Settings.Key.onUnlockAction) private var onUnlockAction = "disconnect"
     @AppStorage(Settings.Key.passwordBoxTimeoutSeconds) private var passwordBoxTimeout = 15
+    @AppStorage(Settings.Key.deskReblankSeconds) private var deskReblankSeconds = 120
     @AppStorage(Settings.Key.requirePasswordToDeactivateFromMenu) private var requirePasswordToDeactivate = false
     @AppStorage(Settings.Key.accessibilityMissingBehavior) private var accessibilityMissing = "warn"
     @AppStorage(Settings.Key.kvmActivityNotificationEnabled) private var kvmActivityNotificationEnabled = false
@@ -34,6 +35,11 @@ struct PrefSecurityTab: View {
                     Text("Disconnect the remote session").tag("disconnect")
                 }
                 Stepper("Password box timeout: \(passwordBoxTimeout)s", value: $passwordBoxTimeout, in: 5...60)
+                Stepper(
+                    deskReblankSeconds == 0
+                        ? "Cover returns after a desk unlock: never"
+                        : "Cover returns after \(deskReblankSeconds)s without desk input",
+                    value: $deskReblankSeconds, in: 0...3600, step: 30)
                 Toggle("Require the password to deactivate from the menu", isOn: $requirePasswordToDeactivate)
             } header: {
                 Text("Unlock")

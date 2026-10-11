@@ -111,15 +111,19 @@ A display that Curtain does not recognize is covered by default under either mod
 
 ## What the desk sees vs what the remote sees
 
-On native (directly attached) displays, the cover window has `sharingType = .none`. This flag excludes the window from screen capture entirely. The remote operator's view shows the real desktop behind the cover. The cover is physically opaque at the desk and invisible to the remote. A `ScreenCaptureKit` self-test verifies that `.none` covers really are excluded from capture before relying on them.
+On native (directly attached) displays, Curtain darkens the monitor itself by setting its **gamma table to zero** (v2.1.0 onward). Gamma is applied at the display output, after the framebuffer that screen capture reads, so the monitor goes black while the remote operator's view shows the real, usable desktop. There is no cover window on those displays.
+
+Earlier versions drew a cover window with `sharingType = .none`. On macOS 15 and later ScreenCaptureKit lists that window anyway (measured on macOS 27), so the remote operator saw the cover and could not use the screen. Gamma replaced it.
+
+macOS gives the gamma back when Curtain exits or crashes, so a dead Curtain can never leave your monitors black. It resets gamma on wake and on display changes, so Curtain re-applies it on those events and once a second.
+
+**Desk password prompt.** Press a key at the desk and a black window with the password box appears on one monitor for a few seconds. The remote operator sees that window while it is up. A correct password lifts the blackout; with the default setting the cover returns on its own after 2 minutes without desk keyboard or mouse input (Settings, Security).
 
 ## DisplayLink
 
-DisplayLink monitors work differently. A DisplayLink display has no direct framebuffer connection. The DisplayLink driver captures the framebuffer over screen capture and sends the image over USB. A window with `sharingType = .none` is excluded from screen capture, which means it is also excluded from the DisplayLink output. The cover does not appear on the DisplayLink monitor at all.
+DisplayLink monitors work differently. A DisplayLink display has no direct framebuffer connection: the driver captures the framebuffer over screen capture and sends the image over USB, so a gamma change on it has no physical effect. For those monitors Curtain keeps a cover window (`sharingType = .readOnly`). The window is capturable, so it appears on the DisplayLink monitor. The trade-off: it also shows in your remote view for those displays.
 
-For those monitors, Curtain uses `sharingType = .readOnly`. The window is capturable, so it appears on the DisplayLink monitor. The trade-off: it also shows in your remote view for those displays.
-
-Mark your DisplayLink monitors in settings (Displays, then Mark Externals as DisplayLink). Native displays remain invisible to the remote. DisplayLink displays show the cover in both views, which keeps the desk covered.
+Mark your DisplayLink monitors in settings (Displays, then Mark Externals as DisplayLink). Native displays are darkened by gamma and do not appear in the remote view. DisplayLink displays show the cover in both views, which keeps the desk covered.
 
 Identifying DisplayLink displays by USB vendor ID is unreliable because EDID passthrough makes all monitors report the same vendor and model. Identical monitors also report serial `0`, so Curtain keys covers by `CGDisplayCreateUUIDFromDisplayID`, which is stable. The Identify Displays button flashes each monitor's index so you can match them up.
 

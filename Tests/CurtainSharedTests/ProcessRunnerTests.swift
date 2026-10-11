@@ -42,3 +42,26 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertEqual(result.output, "hello\n")
     }
 }
+
+/// A descriptor leaked per call surfaced in the running app as ~30 fds a minute from the 2 s
+/// netstat poll, and later as "Bad file descriptor" on launch.
+final class ProcessRunnerDescriptorTests: XCTestCase {
+    private func openDescriptorCount() -> Int {
+        (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count) ?? -1
+    }
+
+    func testTimeoutRunDoesNotLeakDescriptors() {
+        _ = ProcessRunner.run("/bin/echo", ["warm"], timeout: 5)
+        let before = openDescriptorCount()
+        for _ in 0..<60 { _ = ProcessRunner.run("/bin/echo", ["x"], timeout: 5) }
+        let after = openDescriptorCount()
+        XCTAssertLessThanOrEqual(after - before, 3, "fds grew from \(before) to \(after) over 60 runs")
+    }
+
+    func testHungChildDoesNotLeakDescriptors() {
+        let before = openDescriptorCount()
+        for _ in 0..<3 { _ = ProcessRunner.run("/bin/sleep", ["30"], timeout: 0.2) }
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertLessThanOrEqual(openDescriptorCount() - before, 3)
+    }
+}

@@ -405,3 +405,92 @@ final class SessionCoordinatorEndLockTests: XCTestCase {
         XCTAssertFalse(sut.isActive)
     }
 }
+
+// MARK: - Desk unlock: cover returns by itself; idle locks without a cover
+
+@MainActor
+final class SessionCoordinatorDeskTests: XCTestCase {
+    private var suiteName: String!
+    private var originalDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "SessionCoordinatorDeskTests.\(UUID().uuidString)"
+        originalDefaults = Settings.d
+        let isolated = UserDefaults(suiteName: suiteName)!
+        isolated.removePersistentDomain(forName: suiteName)
+        Settings.d = isolated
+        Settings.registerDefaults()
+        Settings.armed = true
+    }
+
+    override func tearDown() {
+        Settings.d.removePersistentDomain(forName: suiteName)
+        Settings.d = originalDefaults
+        UserDefaults.standard.removePersistentDomain(forName: suiteName)
+        super.tearDown()
+    }
+
+    private func unlockedMidSession(_ spy: SpyActionRunner) -> SessionCoordinator {
+        let sut = SessionCoordinator(runner: spy)
+        sut.isAccessibilityTrusted = { true }
+        sut.activateNow()
+        sut.simulateConnect()
+        Settings.d.set("keepSession", forKey: Settings.Key.onUnlockAction)
+        sut.simulatePasswordUnlock()
+        return sut
+    }
+
+    func testCoverReturnsAfterTheDeskGoesQuiet() {
+        Settings.d.set(120, forKey: Settings.Key.deskReblankSeconds)
+        let spy = SpyActionRunner()
+        let sut = unlockedMidSession(spy)
+        XCTAssertFalse(sut.isActive)
+
+        sut.physicalIdleSeconds = { 30 }
+        sut.simulateDeskReblankTick()
+        XCTAssertFalse(sut.isActive, "desk still active: cover stays down")
+
+        sut.physicalIdleSeconds = { 121 }
+        sut.simulateDeskReblankTick()
+        XCTAssertTrue(sut.isActive, "desk quiet long enough: cover returns")
+        XCTAssertEqual(spy.activateCoverCount, 2)
+    }
+
+    func testCoverDoesNotReturnWhenSetToNever() {
+        Settings.d.set(0, forKey: Settings.Key.deskReblankSeconds)
+        let sut = unlockedMidSession(SpyActionRunner())
+        sut.physicalIdleSeconds = { 100_000 }
+        sut.simulateDeskReblankTick()
+        XCTAssertFalse(sut.isActive)
+    }
+
+    func testCoverDoesNotReturnAfterTheSessionEnded() {
+        Settings.d.set(60, forKey: Settings.Key.deskReblankSeconds)
+        let sut = unlockedMidSession(SpyActionRunner())
+        sut.simulateDisconnect()
+        sut.physicalIdleSeconds = { 100_000 }
+        sut.simulateDeskReblankTick()
+        XCTAssertFalse(sut.isActive)
+    }
+
+    func testIdleLocksEvenWithoutACover() {
+        let spy = SpyActionRunner()
+        let sut = SessionCoordinator(runner: spy)
+        sut.isAccessibilityTrusted = { false }  // cover never rises
+        sut.simulateConnect()
+        sut.simulateIdle()
+        XCTAssertEqual(spy.runCalls.count, 1)
+        XCTAssertTrue(spy.runCalls[0].lock)
+        XCTAssertTrue(spy.runCalls[0].screenOff)
+        XCTAssertTrue(spy.runCalls[0].disconnect)
+        XCTAssertFalse(spy.runCalls[0].deactivateCurtain)
+    }
+
+    func testIdleWithoutASessionDoesNothing() {
+        let spy = SpyActionRunner()
+        let sut = SessionCoordinator(runner: spy)
+        sut.simulateIdle()
+        XCTAssertTrue(spy.runCalls.isEmpty)
+    }
+}

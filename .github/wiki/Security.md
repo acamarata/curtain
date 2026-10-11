@@ -60,4 +60,4 @@ The SHA-256 check and the notarization check are independent guarantees and neit
 
 ## Multi-display behavior
 
-Curtain never leaves a display exposed at the desk. Native displays are hidden from the remote viewer with `sharingType = .none`, so the remote session does not even see them. DisplayLink displays cannot be hidden that way, so Curtain covers them with a visible cover (`.readOnly`). Either way the desk sees a cover, not your work. A display Curtain does not recognize is covered by default rather than left open.
+Curtain never leaves a display exposed at the desk. Native displays are darkened with a zero gamma table (v2.1.0 onward), which blanks the monitor but not the remote capture, so the remote session still sees and can use the real desktop. DisplayLink displays have no physical output to darken, so Curtain covers them with a visible cover window (`.readOnly`). Either way the desk sees black, not your work. A display Curtain does not recognize is covered by default rather than left open.

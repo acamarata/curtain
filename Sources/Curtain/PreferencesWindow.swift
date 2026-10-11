@@ -433,7 +433,7 @@ struct PreferencesView: View {
         Settings.Key.onIdleDeactivate,
         Settings.Key.onEndLock, Settings.Key.onEndScreenOff, Settings.Key.onEndDeactivate,
         Settings.Key.onEndLockAlways,
-        Settings.Key.onUnlockAction, Settings.Key.passwordBoxTimeoutSeconds,
+        Settings.Key.onUnlockAction, Settings.Key.passwordBoxTimeoutSeconds, Settings.Key.deskReblankSeconds,
         Settings.Key.requirePasswordToDeactivateFromMenu, Settings.Key.accessibilityMissingBehavior,
         Settings.Key.disconnectFeatureEnabled,
         Settings.Key.displayLinkUUIDs, Settings.Key.perDisplayCoverDisabled,

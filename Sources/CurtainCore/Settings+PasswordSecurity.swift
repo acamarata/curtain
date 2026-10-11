@@ -236,7 +236,11 @@ extension Settings {
     /// to a per-test-run unique suffix in setUp, mirroring the `Settings.d`
     /// UserDefaults-suite seam, so tests never touch the real app's Keychain
     /// item and never leak state across test cases regardless of order.
-    static var keychainService = "com.curtain.password"
+    /// Under xctest the service is namespaced so a test run can never read the user's real password
+    /// item: that read raises a Keychain "allow access" prompt on the desk and blocks the test
+    /// process until someone answers it (hit on 2026-10-11 once a real password had been set).
+    static var keychainService =
+        ProcessInfo.processInfo.processName == "xctest" ? "com.curtain.password.xctest" : "com.curtain.password"
 
     /// Test-only failure injection: when true, writePasswordMaterial(...)
     /// short-circuits to `false` without touching the Keychain at all. There

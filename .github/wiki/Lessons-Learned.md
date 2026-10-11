@@ -148,3 +148,10 @@ Three things were worth learning from actually doing it:
 - **Notarizing the app is not enough — the `.dmg` needs it too.** The first notarized build stapled only the app, and Gatekeeper still assessed the `.dmg` as "rejected — no usable signature". The `.dmg` is what the user downloads, so it is what carries the quarantine flag and gets checked first. Sign, notarize and staple both.
 - **Verify credentials before building.** The app-specific password stored for this account returned `HTTP 401` while the App Store Connect API key authenticated cleanly. Checking that first, with a throwaway `notarytool history` call, turned a mid-release failure into a one-line finding.
 - **Moving from ad-hoc to Developer ID clears the Accessibility grant once.** macOS keys TCC permissions to the code signature, so changing it looks like a different app. Curtain still reports itself armed, which makes the loss silent — worth documenting for users rather than letting them discover it when a cover fails to rise. It is a one-time cost: the Developer ID identity is stable, so later updates keep the grant, which ad-hoc rebuilds never did.
+
+
+## `sharingType = .none` stopped hiding windows on macOS 15+
+
+Through v2.0.x the cover on native displays was a window with `sharingType = .none`, on the assumption that Screen Sharing would not capture it. It does: on macOS 27 a `.none` window is still listed and on screen to ScreenCaptureKit, which Screen Sharing uses. A remote session therefore saw the cover (with its lock icon) instead of the desktop and could not use the screen. This was found on 2026-10-11 from the first real remote session on the new Mac, because earlier releases only ever tested detection, never what the remote operator sees.
+
+v2.1.0 darkens native monitors with a zero gamma table instead. Gamma is applied at the display output, after the framebuffer capture reads, so the monitor goes black and the capture does not change. Measure these things on the real machine; do not trust a documented flag.

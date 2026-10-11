@@ -24,7 +24,7 @@ final class SettingsImportValidationTests: XCTestCase {
         Settings.Key.onIdleDeactivate,
         Settings.Key.onEndLock, Settings.Key.onEndScreenOff, Settings.Key.onEndDeactivate,
         Settings.Key.onEndLockAlways,
-        Settings.Key.onUnlockAction, Settings.Key.passwordBoxTimeoutSeconds,
+        Settings.Key.onUnlockAction, Settings.Key.passwordBoxTimeoutSeconds, Settings.Key.deskReblankSeconds,
         Settings.Key.requirePasswordToDeactivateFromMenu, Settings.Key.accessibilityMissingBehavior,
         Settings.Key.disconnectFeatureEnabled,
         Settings.Key.displayLinkUUIDs, Settings.Key.perDisplayCoverDisabled,
@@ -34,7 +34,7 @@ final class SettingsImportValidationTests: XCTestCase {
     ]
 
     func testEveryExportableKeyHasExactlyOneRule() {
-        XCTAssertEqual(Self.exportableKeys.count, 36, "expected 36 exportable keys")
+        XCTAssertEqual(Self.exportableKeys.count, 37, "expected 37 exportable keys")
         let gaps = SettingsImportValidation.coverageGaps(for: Self.exportableKeys)
         XCTAssertTrue(gaps.uncovered.isEmpty, "keys with no validation rule: \(gaps.uncovered)")
         XCTAssertTrue(gaps.overlapping.isEmpty, "keys matching multiple buckets: \(gaps.overlapping)")

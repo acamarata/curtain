@@ -6,6 +6,46 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-11
+
+Found from the first real remote session on macOS 27: the remote operator saw Curtain's cover
+(with its lock icon) instead of the desktop and could not use the screen.
+
+### Fixed
+
+- **The remote session could not see or use the screen.** The cover on native displays was a
+  window with `sharingType = .none`. On macOS 15+ ScreenCaptureKit, which Screen Sharing uses,
+  lists such a window anyway, so the remote view showed the cover. Native displays are now
+  darkened by setting their **gamma table to zero** (`HostBlackout`): the monitor goes black
+  while a capture of it is unchanged (measured on macOS 27: capture luminance 42.6 normal, 42.9
+  blacked out; the gamma table reads back as zeros). macOS restores gamma when Curtain exits or
+  crashes, and resets it on wake and display changes, so it is re-applied on those events and
+  once a second. DisplayLink displays still use a `.readOnly` cover window (no physical output).
+- **Idle actions did not run without a cover.** The idle lock / screen-off / disconnect only ran
+  when the cover was up. They now also run for a connected session with no cover (same
+  "Also lock when the curtain never came up" setting as the session end).
+- **File descriptor leak in the process runner.** About 30 descriptors a minute leaked from the
+  2-second netstat poll (Foundation's `Pipe`); one launch later failed with "Bad file
+  descriptor". The runner now uses raw `pipe(2)` with explicit closes (regression tests count
+  descriptors).
+- **`swift test` could hang on a Keychain prompt** once a real password existed, because tests read
+  the user's real password item. The test process now uses its own Keychain service.
+- Removed the ScreenCaptureKit self-test of `.none` covers: its premise no longer holds and it
+  triggered a Screen Recording prompt.
+
+### Added
+
+- **Desk unlock with auto-return.** After the desk password lifts the blackout while a remote
+  session is still connected, the cover comes back by itself after the desk keyboard and mouse
+  have been idle for N seconds (Settings > Security, default 120, 0 = never).
+- The desk password box now appears as a black window with the box on one monitor while it is
+  up; the monitor is made visible only for that time.
+
+### Changed
+
+- The cover-appearance settings (color, message, logo, aerial) now apply only to DisplayLink
+  displays; native monitors are plain black.
+
 ## [2.0.6] - 2026-10-11
 
 ### Fixed

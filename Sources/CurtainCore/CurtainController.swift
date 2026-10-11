@@ -1,5 +1,4 @@
 import Cocoa
-import ScreenCaptureKit
 import AVFoundation
 import CurtainShared
 
@@ -54,12 +53,25 @@ final class CurtainController {
 
     var onUnlock: (() -> Void)?
 
-    var isShown: Bool { !covers.isEmpty }
+    /// Native displays are darkened by gamma (HostBlackout), not by a cover window, so the
+    /// remote Screen Sharing viewer keeps seeing the real desktop. uuid -> display ID.
+    var blackedDisplays: [String: CGDirectDisplayID] = [:]
+    let blackout = HostBlackout()
+    /// Full-screen opaque window that carries the password box when its host display is
+    /// gamma-blanked (no cover window exists there). Shown only while the box is up.
+    var boxWindow: CoverWindow?
+    var boxHostUUID: String?
+    private var wakeObservers: [NSObjectProtocol] = []
+
+    var isShown: Bool { !covers.isEmpty || !blackedDisplays.isEmpty }
+
+    /// Every display currently covered, by either mechanism.
+    var coveredUUIDs: Set<String> { Set(covers.keys).union(blackedDisplays.keys) }
 
     // MARK: - Lifecycle
 
     func show() {
-        guard covers.isEmpty else { return }
+        guard !isShown else { return }
         System.preventDisplaySleep()
 
         // Build the shared aerial player once before creating cover windows so
@@ -72,28 +84,40 @@ final class CurtainController {
         for screen in NSScreen.screens {
             guard let uuid = uuidKey(for: screen) else { continue }
             if shouldCover(uuid: uuid, isNew: false) {
-                covers[uuid] = makeCover(screen: screen, uuid: uuid)
+                if usesWindowCover(screen: screen, isNew: false) {
+                    covers[uuid] = makeCover(screen: screen, uuid: uuid)
+                } else if let id = Self.displayID(of: screen) {
+                    blackedDisplays[uuid] = id
+                }
             }
         }
+        blackout.setTargets(Set(blackedDisplays.values))
         ensurePasswordBox()
         startClockIfNeeded()
-        Log.event("cover shown: style=\(Settings.coverStyle) displays=\(covers.count)")
+        Log.event(
+            "cover shown: style=\(Settings.coverStyle) windowCovers=\(covers.count) blackedOut=\(blackedDisplays.count)"
+        )
+
+        // macOS resets gamma on wake; re-apply right away so the monitors never flash the desktop.
+        let wake: (Notification) -> Void = { [weak self] _ in
+            Task { @MainActor in
+                self?.blackout.refresh(force: true)
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                self?.blackout.refresh(force: true)
+            }
+        }
+        wakeObservers = [
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main, using: wake),
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: wake)
+        ]
 
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.scheduleReconcile() }
-        }
-
-        // Best-effort regression check that a .none cover is excluded from capture.
-        // Diagnostics-only: SCShareableContent triggers the Screen Recording permission
-        // prompt (on the desk AND the remote view) the first time it runs, and its result
-        // only goes to the log, so it must never run in normal use.
-        if Settings.diagnosticsLoggingEnabled {
-            CurtainController.verifyNoneCoverHidden { ok in
-                if !ok { NSLog("Curtain: SCK self-test — a .none cover was visible in capture (regression)") }
-            }
         }
     }
 
@@ -107,11 +131,17 @@ final class CurtainController {
         clockTimer?.invalidate()
         clockTimer = nil
 
+        for token in wakeObservers { NSWorkspace.shared.notificationCenter.removeObserver(token) }
+        wakeObservers = []
+
         covers.values.forEach {
             ($0.window.contentView as? CoverContentView)?.teardownAerialLayer()
             $0.window.orderOut(nil)
         }
         covers.removeAll()
+        blackedDisplays.removeAll()
+        blackout.restore()
+        tearDownBoxWindow()
 
         // Release the shared player only after all layers have been removed so no
         // AVPlayerLayer outlives the player that backs it.
@@ -138,8 +168,18 @@ final class CurtainController {
         b.key(keycode: keycode, chars: chars)
     }
 
+    /// A physical click at the desk raises the password box when "any key" reveals it.
+    func physicalClick() {
+        guard Settings.revealOnAnyKey else { return }
+        box?.raiseFromClick()
+    }
+
     /// Called once per second to auto-hide the password box after inactivity.
-    func tick() { box?.tick() }
+    func tick() {
+        box?.tick()
+        // Cheap readback; only re-applies where macOS reset a display's gamma.
+        if blackout.isActive { blackout.refresh() }
+    }
 
     /// Coordinator reports whether desk input is actually being blocked. When
     /// false, every cover shows a warning banner; when true, banners clear.
@@ -149,6 +189,24 @@ final class CurtainController {
         for cover in covers.values {
             (cover.window.contentView as? CoverContentView)?.setWarningVisible(!blocked)
         }
+    }
+
+    // MARK: - Cover mechanism
+
+    /// DisplayLink displays only exist as capture (no physical output to darken), so they keep a
+    /// `.readOnly` cover window; a display forced to the DisplayLink treatment likewise. Every
+    /// other display is darkened by gamma so the remote operator is unaffected.
+    func usesWindowCover(screen: NSScreen, isNew: Bool) -> Bool {
+        if System.isDisplayLink(screen) { return true }
+        return isNew && Settings.newDisplayPolicy == "treatAsDisplayLink"
+    }
+
+    nonisolated static func displayID(of screen: NSScreen) -> CGDirectDisplayID? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+
+    func screen(forUUID uuid: String) -> NSScreen? {
+        NSScreen.screens.first { uuidKey(for: $0) == uuid }
     }
 
     // MARK: - Cover-scope decision
@@ -237,48 +295,103 @@ final class CurtainController {
 
     /// Guarantee exactly one reachable password box, placed per the configured
     /// policy. Recreates/moves the box if its host display vanished on reconcile.
+    /// A host with a cover window carries the box inside it; a gamma-blanked host gets
+    /// a full-screen opaque box window that is shown only while the box is up.
     func ensurePasswordBox() {
-        guard !covers.isEmpty else { box = nil; return }
+        guard isShown else {
+            box = nil
+            tearDownBoxWindow()
+            boxHostUUID = nil
+            return
+        }
 
         let targetUUID = passwordHostUUID()
         // If the box already lives on the right host, keep it.
-        if let host = covers.first(where: { $0.value.isPasswordHost }), host.key == targetUUID {
-            return
-        }
+        if box != nil, boxHostUUID == targetUUID { return }
         // Clear the old host flag + remove the old box.
         if let oldKey = covers.first(where: { $0.value.isPasswordHost })?.key {
             covers[oldKey]?.isPasswordHost = false
         }
         box?.removeFromSuperview()
         box = nil
+        tearDownBoxWindow()
+        boxHostUUID = nil
 
-        guard let cover = covers[targetUUID],
-            let content = cover.window.contentView as? CoverContentView
-        else { return }
+        if let cover = covers[targetUUID], let content = cover.window.contentView as? CoverContentView {
+            let b = makeBox(frame: content.bounds, host: cover.window as? CoverWindow)
+            content.addSubview(b)
+            box = b
+            covers[targetUUID]?.isPasswordHost = true
+            boxHostUUID = targetUUID
+        } else if blackedDisplays[targetUUID] != nil, let screen = screen(forUUID: targetUUID) {
+            let w = makeBoxWindow(screen: screen)
+            let content = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            content.wantsLayer = true
+            content.layer?.backgroundColor = NSColor.black.cgColor
+            w.contentView = content
+            let b = makeBox(frame: content.bounds, host: w)
+            b.onVisibilityChange = { [weak self] visible in self?.boxVisibilityChanged(visible: visible) }
+            content.addSubview(b)
+            boxWindow = w
+            box = b
+            boxHostUUID = targetUUID
+        }
+    }
 
-        let b = PasswordBox(frame: content.bounds)
+    private func makeBox(frame: NSRect, host: CoverWindow?) -> PasswordBox {
+        let b = PasswordBox(frame: frame)
         b.isHidden = true
         b.autoresizingMask = [.width, .height]
         b.onSuccess = { [weak self] in self?.onUnlock?() }
         // Accessibility exception (T-P1-E07-01): PasswordBox needs its own host
         // window to grant/revoke key status around the accessible NSSecureTextField
         // path — see CoverWindow.allowsKeyForAccessibility and PasswordBox's header.
-        b.hostWindow = cover.window as? CoverWindow
-        content.addSubview(b)
-        box = b
-        covers[targetUUID]?.isPasswordHost = true
+        b.hostWindow = host
+        return b
+    }
+
+    private func makeBoxWindow(screen: NSScreen) -> CoverWindow {
+        let w = CoverWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        w.backgroundColor = .black
+        w.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
+        w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        w.isOpaque = true
+        w.hasShadow = false
+        w.ignoresMouseEvents = true
+        return w
+    }
+
+    func tearDownBoxWindow() {
+        if let id = boxHostUUID.flatMap({ blackedDisplays[$0] }) { blackout.resume(id) }
+        boxWindow?.orderOut(nil)
+        boxWindow = nil
+    }
+
+    /// The box is a full-screen opaque window on a gamma-blanked display. Order matters so the
+    /// desktop never flashes: when showing, the opaque window goes up BEFORE the display is made
+    /// visible; when hiding, the display is blanked again BEFORE the window comes down. The
+    /// remote viewer sees this black window with the box for as long as it is up.
+    private func boxVisibilityChanged(visible: Bool) {
+        guard let w = boxWindow, let uuid = boxHostUUID, let id = blackedDisplays[uuid] else { return }
+        if visible {
+            w.orderFrontRegardless()
+            blackout.pause(id)
+        } else {
+            blackout.resume(id)
+            w.orderOut(nil)
+        }
     }
 
     /// Resolve which display hosts the password box for the current placement
     /// mode, always falling back to a display that actually has a cover.
     private func passwordHostUUID() -> String {
-        let fallback = primaryCoveredUUID() ?? covers.keys.first ?? ""
+        let fallback = primaryCoveredUUID() ?? coveredUUIDs.sorted().first ?? ""
         switch Settings.passwordBoxPlacement {
         case "all":
             return fallback  // "all" still anchors one interactive box; banners cover the rest
         case "specific":
             let wanted = Settings.passwordBoxSpecificUUID
-            return covers[wanted] != nil ? wanted : fallback
+            return coveredUUIDs.contains(wanted) ? wanted : fallback
         case "primary":
             return primaryCoveredUUID() ?? fallback
         default:  // "followActive"
@@ -287,19 +400,19 @@ final class CurtainController {
     }
 
     private func primaryCoveredUUID() -> String? {
-        if let main = NSScreen.screens.first, let uuid = uuidKey(for: main), covers[uuid] != nil { return uuid }
-        return covers.keys.first
+        if let main = NSScreen.screens.first, let uuid = uuidKey(for: main), coveredUUIDs.contains(uuid) { return uuid }
+        return coveredUUIDs.sorted().first
     }
 
     /// The display under the mouse, else the focused screen — whichever is covered.
     private func activeCoveredUUID() -> String? {
         let mouse = NSEvent.mouseLocation
         if let hit = NSScreen.screens.first(where: { $0.frame.contains(mouse) }),
-            let uuid = uuidKey(for: hit), covers[uuid] != nil
+            let uuid = uuidKey(for: hit), coveredUUIDs.contains(uuid)
         {
             return uuid
         }
-        if let main = NSScreen.main, let uuid = uuidKey(for: main), covers[uuid] != nil {
+        if let main = NSScreen.main, let uuid = uuidKey(for: main), coveredUUIDs.contains(uuid) {
             return uuid
         }
         return primaryCoveredUUID()

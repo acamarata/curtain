@@ -68,6 +68,10 @@ final class InputFilter {
     /// modifier-flags raw value). The flags let the controller match a reveal combo.
     var onPhysicalKey: ((Int, String?, UInt64) -> Void)?
 
+    /// Fired on the main thread for every physical left click, so a click at the desk can raise the
+    /// password box the same way a key press does.
+    var onPhysicalClick: (() -> Void)?
+
     /// True once a tap is live. Coordinator shows an "Accessibility needed" warning
     /// when this stays false after start().
     var isTapInstalled: Bool { tap != nil }
@@ -256,6 +260,11 @@ final class InputFilter {
         onPhysicalKey?(keyCode, characters, flags)
     }
 
+    fileprivate func deliverPhysicalClick() {
+        guard tap != nil else { return }
+        onPhysicalClick?()
+    }
+
     fileprivate func reenableFromCallback() {
         reenableInvocationCount += 1
         ensureActive()
@@ -307,6 +316,9 @@ private let callback: CGEventTapCallBack = { _, type, event, refcon in
         DispatchQueue.main.async {
             unmanaged.takeUnretainedValue().deliverPhysicalKey(keyCode: keyCode, characters: chars, flags: flags)
         }
+    }
+    if type == .leftMouseDown {
+        DispatchQueue.main.async { unmanaged.takeUnretainedValue().deliverPhysicalClick() }
     }
     return nil
 }

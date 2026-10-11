@@ -74,6 +74,9 @@ public enum Settings {
         /// existing install. See Settings+Migrations.swift.
         public static let schemaVersion = "schemaVersion"
         public static let passwordBoxTimeoutSeconds = "password.boxTimeoutSeconds"
+        /// After the desk password dismisses the cover mid-session, the cover returns on its own once
+        /// the desk keyboard/mouse have been idle this many seconds. 0 = never return.
+        public static let deskReblankSeconds = "deskReblank.seconds"
         public static let requirePasswordToDeactivateFromMenu = "requirePasswordToDeactivateFromMenu"
         public static let accessibilityMissingBehavior = "accessibility.missingBehavior"
         // Disconnect feature
@@ -231,6 +234,7 @@ public enum Settings {
             Key.onEndLockAlways: true,
             Key.onPasswordDisconnect: true,
             Key.passwordBoxTimeoutSeconds: 15,
+            Key.deskReblankSeconds: 120,
             Key.requirePasswordToDeactivateFromMenu: false,
             Key.accessibilityMissingBehavior: "warn",
             Key.disconnectFeatureEnabled: false,
@@ -326,6 +330,7 @@ public enum Settings {
     // MARK: - Security
     /// On curtain unlock: drop the remote session, or keep it running. Replaces the legacy onPasswordDisconnect bool.
     public static var unlockDisconnect: Bool { d.string(forKey: Key.onUnlockAction) == "disconnect" }
+    public static var deskReblankSeconds: Int { clamp(d.integer(forKey: Key.deskReblankSeconds), 0, 3600) }
     public static var passwordBoxTimeoutSeconds: Int { clamp(d.integer(forKey: Key.passwordBoxTimeoutSeconds), 5, 60) }
     public static var requirePasswordToDeactivateFromMenu: Bool {
         d.bool(forKey: Key.requirePasswordToDeactivateFromMenu)

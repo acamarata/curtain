@@ -42,7 +42,8 @@ public enum SettingsImportValidation {
     public static let rangeValues: [String: ClosedRange<Int>] = [
         Settings.Key.connectGraceSeconds: 0...30,
         Settings.Key.idleMinutes: 1...240,
-        Settings.Key.passwordBoxTimeoutSeconds: 5...60
+        Settings.Key.passwordBoxTimeoutSeconds: 5...60,
+        Settings.Key.deskReblankSeconds: 0...3600
     ]
 
     /// Keys expected to decode as a plain Bool.

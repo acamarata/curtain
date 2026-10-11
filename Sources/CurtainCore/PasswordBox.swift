@@ -175,6 +175,14 @@ final class PasswordBox: NSView {
         return ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol || ch == " "
     }
 
+    /// A click at the desk raises the box (no key is typed).
+    func raiseFromClick() {
+        guard isHidden else { return }
+        reveal()
+        bump()
+        if Settings.isLockedOut { showLockout() }
+    }
+
     func key(keycode: Int, chars: String?) {
         let wasHidden = isHidden
         switch Self.disposition(wasHidden: wasHidden, revealOnAnyKey: Settings.revealOnAnyKey, keycode: keycode) {
@@ -286,10 +294,15 @@ final class PasswordBox: NSView {
 
     // MARK: - isHidden override: drive the accessible field's lifecycle off the
 
+    /// Fired when the box is shown or hidden. A gamma-blanked host display needs to be made
+    /// visible (with an opaque window behind the box) only while the box is up.
+    var onVisibilityChange: ((Bool) -> Void)?
+
     override var isHidden: Bool {
         didSet {
             guard isHidden != oldValue else { return }
             refreshAccessibleFieldVisibility()
+            onVisibilityChange?(!isHidden)
         }
     }
 

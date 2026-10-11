@@ -1,16 +1,12 @@
 import Cocoa
-import ScreenCaptureKit
 
-/// Purpose: Reconciles cover-window topology against live NSScreen state on
-///          hot-plug (debounced), and runs the ScreenCaptureKit self-test that
-///          validates the sharingType=.none guarantee those covers depend on.
+/// Purpose: Reconciles cover topology against live NSScreen state on hot-plug (debounced):
+///          window covers (DisplayLink displays) and gamma-blanked native displays alike.
 /// Inputs:  NSApplication.didChangeScreenParametersNotification (observed by
 ///          CurtainController, which calls scheduleReconcile()), live
 ///          NSScreen.screens at reconcile time.
-/// Outputs: Adds/drops Cover entries on CurtainController.covers by display UUID
-///          identity; re-anchors the password box and clock; verifyNoneCoverHidden
-///          reports (via completion) whether any `.none`-shared cover window is
-///          still visible to ScreenCaptureKit (a regression if so).
+/// Outputs: Adds/drops covers by display UUID identity; re-applies the gamma blackout
+///          (macOS resets gamma on reconfiguration); re-anchors the password box and clock.
 /// Constraints: @MainActor (extension of the main-actor-isolated CurtainController).
 ///              reconcile() is debounced 0.3s via scheduleReconcile() so rapid
 ///              successive screen-parameter notifications during a hot-plug
@@ -30,9 +26,9 @@ extension CurtainController {
     }
 
     func reconcile() {
-        guard !covers.isEmpty else { return }
+        guard isShown else { return }
 
-        let beforeCount = covers.count
+        let beforeCount = covers.count + blackedDisplays.count
         var liveByUUID: [String: NSScreen] = [:]
         for screen in NSScreen.screens {
             if let uuid = uuidKey(for: screen) { liveByUUID[uuid] = screen }
@@ -40,23 +36,22 @@ extension CurtainController {
 
         // UUID-identity diff (not index-based): which covered UUIDs are no longer
         // live, and which live UUIDs aren't covered yet. See reconcileDiff's doc
-        // comment for why this must be identity-, not position-, based.
+        // comment for why this must be identity-, not position-, based. "Covered" means
+        // either a cover window (DisplayLink) or a gamma-blanked native display.
         let diff = CurtainController.reconcileDiff(
-            coveredUUIDs: Set(covers.keys),
+            coveredUUIDs: coveredUUIDs,
             liveUUIDs: Set(liveByUUID.keys))
 
         // Drop covers for displays that vanished.
         for uuid in diff.toDrop {
-            guard let cover = covers[uuid] else { continue }
-            (cover.window.contentView as? CoverContentView)?.teardownAerialLayer()
-            cover.window.orderOut(nil)
-            covers.removeValue(forKey: uuid)
+            dropCover(uuid)
         }
 
         // Update survivors (covered both before and after) and add covers for the
         // newly-attached displays reconcileDiff identified.
         for (uuid, screen) in liveByUUID {
-            if let cover = covers[uuid] {
+            let isCovered = covers[uuid] != nil || blackedDisplays[uuid] != nil
+            if isCovered {
                 // A survivor whose UUID has since been added to the KVM-exclusion
                 // list (e.g. the user toggled it on live, mid-session, while a
                 // cover was already showing) must be torn down, not merely have
@@ -64,21 +59,27 @@ extension CurtainController {
                 // used above for vanished displays so no aerial player or window
                 // reference is leaked.
                 if Settings.kvmExcludedDisplayUUIDs.contains(uuid) {
-                    (cover.window.contentView as? CoverContentView)?.teardownAerialLayer()
-                    cover.window.orderOut(nil)
-                    covers.removeValue(forKey: uuid)
+                    dropCover(uuid)
                     continue
                 }
-                let window = cover.window
-                window.setFrame(screen.frame, display: true)
-                window.sharingType = CurtainController.sharingType(isDisplayLink: System.isDisplayLink(screen))
-            } else if diff.toAdd.contains(uuid), shouldCover(uuid: uuid, isNew: true) {
-                // Re-build the shared player if aerial style was active before and
-                // we still have other aerial covers running.
-                if Settings.coverStyle == "aerial" && aerialPlayer == nil {
-                    buildSharedAerialPlayer()
+                if let cover = covers[uuid] {
+                    let window = cover.window
+                    window.setFrame(screen.frame, display: true)
+                    window.sharingType = CurtainController.sharingType(isDisplayLink: System.isDisplayLink(screen))
+                } else if let id = Self.displayID(of: screen) {
+                    blackedDisplays[uuid] = id  // display IDs can change across a reconfiguration
                 }
-                covers[uuid] = makeCover(screen: screen, uuid: uuid, forceNewDisplay: true)
+            } else if diff.toAdd.contains(uuid), shouldCover(uuid: uuid, isNew: true) {
+                if usesWindowCover(screen: screen, isNew: true) {
+                    // Re-build the shared player if aerial style was active before and
+                    // we still have other aerial covers running.
+                    if Settings.coverStyle == "aerial" && aerialPlayer == nil {
+                        buildSharedAerialPlayer()
+                    }
+                    covers[uuid] = makeCover(screen: screen, uuid: uuid, forceNewDisplay: true)
+                } else if let id = Self.displayID(of: screen) {
+                    blackedDisplays[uuid] = id
+                }
             }
         }
 
@@ -94,11 +95,31 @@ extension CurtainController {
             aerialPlayer = nil
         }
 
+        // macOS resets gamma on a display reconfiguration, so re-apply it for the settled set.
+        blackout.setTargets(Set(blackedDisplays.values))
+        blackout.refresh(force: true)
+
         ensurePasswordBox()
         startClockIfNeeded()
-        Log.event("reconcile: displays now \(covers.count) (was \(beforeCount))")
+        Log.event("reconcile: displays now \(covers.count + blackedDisplays.count) (was \(beforeCount))")
         // Reapply any active warning banner to freshly-built covers.
         if !inputBlocked { setInputBlocked(false) }
+    }
+
+    /// Remove one display's cover, whichever mechanism holds it.
+    private func dropCover(_ uuid: String) {
+        if let cover = covers[uuid] {
+            (cover.window.contentView as? CoverContentView)?.teardownAerialLayer()
+            cover.window.orderOut(nil)
+            covers.removeValue(forKey: uuid)
+        }
+        blackedDisplays.removeValue(forKey: uuid)
+        if boxHostUUID == uuid {
+            box?.removeFromSuperview()
+            box = nil
+            tearDownBoxWindow()
+            boxHostUUID = nil
+        }
     }
 
     // MARK: - Pure diff helper (extracted for unit testing — T-P1-E05-05)
@@ -113,34 +134,5 @@ extension CurtainController {
         toDrop: Set<String>, toAdd: Set<String>
     ) {
         (coveredUUIDs.subtracting(liveUUIDs), liveUUIDs.subtracting(coveredUUIDs))
-    }
-
-    // MARK: - SCK self-test
-
-    /// Capture the main display via ScreenCaptureKit and confirm a `.none` cover
-    /// is excluded from the shareable content. SCK omits `.none`-shared windows,
-    /// so the heuristic is: if any of our windows are still reported on-screen in
-    /// the shareable window list, that's a regression. Best-effort and off the
-    /// main thread; falls back to a logged stub if SCK content is unavailable.
-    static func verifyNoneCoverHidden(completion: @escaping @Sendable (Bool) -> Void) {
-        if #available(macOS 12.3, *) {
-            SCShareableContent.getWithCompletionHandler { content, error in
-                guard let content, error == nil else {
-                    NSLog("Curtain: SCK self-test not run (\(error?.localizedDescription ?? "no content"))")
-                    completion(true)
-                    return
-                }
-                let pid = ProcessInfo.processInfo.processIdentifier
-                // A correctly-hidden .none cover is absent from the shareable
-                // window list. If any of our windows still show up, warn.
-                let ourVisible = content.windows.contains {
-                    $0.owningApplication?.processID == pid && $0.isOnScreen
-                }
-                completion(!ourVisible)
-            }
-        } else {
-            NSLog("Curtain: SCK self-test not run (requires macOS 12.3+)")
-            completion(true)
-        }
     }
 }

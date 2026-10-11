@@ -65,6 +65,16 @@ public final class SessionCoordinator {
     /// happened", not off "the cover happened to be up".
     private var sessionInProgress = false
 
+    /// Set when the desk password dismissed the cover while a remote session is still connected,
+    /// so the cover can come back by itself after the desk goes quiet (`Settings.deskReblankSeconds`).
+    private var deskUnlockedMidSession = false
+
+    /// Seconds since the last PHYSICAL keyboard/mouse event at the desk (HID state only, so remote
+    /// input does not count). Injectable for tests.
+    var physicalIdleSeconds: () -> TimeInterval = {
+        CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: SessionMonitor.anyInputEventType)
+    }
+
     /// Explicit lifecycle state. Every transition is guarded so it stays idempotent.
     private enum State { case idle, active }
     private var state: State = .idle
@@ -99,6 +109,7 @@ public final class SessionCoordinator {
 
     public func start() {
         input.onPhysicalKey = { [weak self] kc, chars, flags in self?.curtain.physicalKey(kc, chars, flags) }
+        input.onPhysicalClick = { [weak self] in self?.curtain.physicalClick() }
         curtain.onUnlock = { [weak self] in self?.handlePasswordUnlock() }
 
         monitor.onConnect = { [weak self] episodeID in self?.sessionConnected(episodeID: episodeID) }
@@ -110,6 +121,7 @@ public final class SessionCoordinator {
             Task { @MainActor in
                 self?.curtain.tick()
                 self?.recheckAccessibilityIfActive()
+                self?.recheckDeskReblank()
             }
         }
 
@@ -158,6 +170,7 @@ public final class SessionCoordinator {
         currentEpisodeID = episodeID
         guard Settings.armed else { return }
         sessionInProgress = true
+        deskUnlockedMidSession = false
         // A real session wins over any in-flight test: keep whatever is on screen.
         testTeardown?.cancel(); testTeardown = nil
         guard Settings.onStartActivate else { return }
@@ -177,7 +190,17 @@ public final class SessionCoordinator {
     }
 
     private func sessionIdled() {
-        guard Settings.armed, state == .active else { return }
+        guard Settings.armed else { return }
+        guard state == .active else {
+            // No cover is up (Accessibility missing, desk unlock mid-session, cover off), but the
+            // remote session went idle: still lock / sleep / disconnect per the idle set.
+            let idle = Settings.onIdle
+            if sessionInProgress, Settings.onEndLockAlways, idle.lock || idle.screenOff || idle.disconnect {
+                Log.event("running idle actions without cover", episode: currentEpisodeID)
+                runner.run(ActionSet(disconnect: idle.disconnect, lock: idle.lock, screenOff: idle.screenOff))
+            }
+            return
+        }
         Log.event("running idle actions", episode: currentEpisodeID)
         applySet(Settings.onIdle)
     }
@@ -188,6 +211,7 @@ public final class SessionCoordinator {
         connectGrace?.cancel(); connectGrace = nil
         let hadSession = sessionInProgress
         sessionInProgress = false
+        deskUnlockedMidSession = false
         guard state == .active else {
             // The cover is not up, so there is nothing to deactivate, but a remote
             // session just ended: still lock (and sleep the displays) per the end set.
@@ -239,6 +263,9 @@ public final class SessionCoordinator {
     /// transition deterministically via the existing `isAccessibilityTrusted`
     /// injection seam.
     func simulateAXRecheckTick() { recheckAccessibilityIfActive() }
+
+    /// Drives one 1 s tick's desk-reblank check (tests inject `physicalIdleSeconds`).
+    func simulateDeskReblankTick() { recheckDeskReblank() }
 
     // MARK: - State machine
 
@@ -337,6 +364,20 @@ public final class SessionCoordinator {
             System.endScreenShareSession()
         }
         enterIdle()
+        // Keep the remote session working, but bring the cover back once the desk goes quiet.
+        deskUnlockedMidSession = sessionInProgress && Settings.deskReblankSeconds > 0
+    }
+
+    /// Cover returns after a desk unlock once the desk keyboard/mouse have been idle long enough
+    /// and the remote session is still connected. Runs on the 1 s tick.
+    private func recheckDeskReblank() {
+        guard deskUnlockedMidSession, state == .idle, sessionInProgress, Settings.armed else { return }
+        let limit = Settings.deskReblankSeconds
+        guard limit > 0 else { deskUnlockedMidSession = false; return }
+        guard physicalIdleSeconds() >= TimeInterval(limit) else { return }
+        deskUnlockedMidSession = false
+        Log.event("desk idle \(limit)s after unlock: cover returns", episode: currentEpisodeID)
+        enterActive(notify: false)
     }
 
     // MARK: - Manual controls
@@ -348,6 +389,7 @@ public final class SessionCoordinator {
 
     /// Force the cover down with no password gate. Used internally and on quit.
     public func deactivateNow() {
+        deskUnlockedMidSession = false
         connectGrace?.cancel(); connectGrace = nil
         testTeardown?.cancel(); testTeardown = nil
         enterIdle()

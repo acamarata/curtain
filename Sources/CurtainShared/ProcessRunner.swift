@@ -59,7 +59,7 @@ public enum ProcessRunner {
         process.arguments = arguments
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
         do {
             try process.run()
         } catch {
@@ -121,25 +121,40 @@ public enum ProcessRunner {
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
         // Must be wired before `run()` so stdout written before the first poll
-        // tick is still captured. Without this, `pipe.fileHandleForReading` is
-        // never read, so CaptureProbe's netstat-based VNC corroborators
-        // (establishedVNC/peeredUDPVNC) always saw an empty string regardless
-        // of real netstat output — a real bug found and fixed during
-        // T-P1-E10-03's verification pass, not a hypothetical.
-        let pipe = Pipe()
-        process.standardOutput = pipe
+        // tick is still captured (see the history in this file's CaptureProbe fix).
+        //
+        // A raw pipe(2) with explicit close(2)s, not Foundation's Pipe: Pipe left one
+        // descriptor open per call (observed: ~30 leaked fds per minute in the running app
+        // from the 2 s netstat poll), and a leaked descriptor eventually surfaces as
+        // "Bad file descriptor" on a later launch.
+        var fds: [Int32] = [0, 0]
+        guard pipe(&fds) == 0 else {
+            onLaunchFailure?(POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+            return (Result(output: "", exitCode: -1), false)
+        }
+        let readFd = fds[0]
+        let writeFd = fds[1]
+        // Close-on-exec so no other child spawned meanwhile inherits the write end (which would
+        // hold the pipe open and delay EOF); the child's own stdout is a dup2 of writeFd.
+        _ = fcntl(readFd, F_SETFD, FD_CLOEXEC)
+        _ = fcntl(writeFd, F_SETFD, FD_CLOEXEC)
+        process.standardOutput = FileHandle(fileDescriptor: writeFd, closeOnDealloc: false)
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
         } catch {
+            close(readFd)
+            close(writeFd)
             onLaunchFailure?(error)
             return (Result(output: "", exitCode: -1), false)
         }
+        // The parent's copy of the write end must be closed or the reader never sees EOF.
+        close(writeFd)
         // Drain stdout on a background queue WHILE the child runs. Reading only after
         // exit deadlocks any child that writes more than the pipe buffer (64 KB):
         // `netstat -an` is ~100 KB on a busy Mac, so it blocked on write until the
         // timeout killed it and the caller got a truncated result 5 s late.
-        let drain = PipeDrain(pipe.fileHandleForReading)
+        let drain = PipeDrain(readFd)
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning && Date() < deadline {
             usleep(useconds_t(pollInterval * 1_000_000))
@@ -160,21 +175,28 @@ public enum ProcessRunner {
         return (Result(output: drain.finish(waitingUpTo: 2), exitCode: process.terminationStatus), timedOut)
     }
 
-    /// Reads a pipe to EOF on a background queue so the child never blocks on a full
-    /// buffer. `finish` waits (bounded) for EOF and returns everything read so far.
+    /// Reads a pipe to EOF on a background queue so the child never blocks on a full buffer, then
+    /// closes the descriptor. `finish` waits (bounded) for EOF and returns everything read so far.
     private final class PipeDrain: @unchecked Sendable {
         private let lock = NSLock()
         private var data = Data()
         private let group = DispatchGroup()
 
-        init(_ handle: FileHandle) {
+        init(_ fd: Int32) {
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async { [self] in
+                var buffer = [UInt8](repeating: 0, count: 65_536)
                 while true {
-                    let chunk = handle.availableData
-                    if chunk.isEmpty { break }
-                    lock.lock(); data.append(chunk); lock.unlock()
+                    let n = read(fd, &buffer, buffer.count)
+                    if n > 0 {
+                        lock.lock(); data.append(contentsOf: buffer[0..<n]); lock.unlock()
+                    } else if n < 0 && errno == EINTR {
+                        continue
+                    } else {
+                        break
+                    }
                 }
+                close(fd)
                 group.leave()
             }
         }
