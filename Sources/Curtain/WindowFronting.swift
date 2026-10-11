@@ -14,7 +14,16 @@ enum WindowFronting {
     static func bringToFront(_ window: NSWindow) {
         NSApp.setActivationPolicy(.regular)
         window.makeKeyAndOrderFront(nil)
+        // Activation is cooperative on macOS 14+ and is refused when this app was started by a
+        // login item or a background process, which left the window buried behind other apps.
+        // `orderFrontRegardless` raises the window above every app's windows without needing
+        // activation, so it is always seen; activation is still attempted (and retried once).
+        window.orderFrontRegardless()
         activateApp()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            window.orderFrontRegardless()
+            activateApp()
+        }
         let id = ObjectIdentifier(window)
         guard closeObservers[id] == nil else { return }
         closeObservers[id] = NotificationCenter.default.addObserver(

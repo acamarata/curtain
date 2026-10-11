@@ -6,6 +6,16 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-10-11
+
+### Fixed
+
+- **The setup window still opened behind other apps when Curtain was started by a login item or
+  a background process.** The v2.0.5 activation change was not enough: macOS 14+ refuses
+  cooperative activation in that case, and the window measured sixth in the on-screen stack,
+  behind Chrome and Claude. The window is now ordered to the front with `orderFrontRegardless`
+  (retried once), which does not need activation. Measured with the same check: it is now first.
+
 ## [2.0.5] - 2026-10-11
 
 Setup release: asking for the Accessibility permission now works the way a user expects.

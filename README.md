@@ -19,7 +19,7 @@ Your laptop and the desk share one login session, so a window that blocks input 
 
 ## Install
 
-1. Download `Curtain-2.0.5.dmg` from the [Releases](../../releases) page.
+1. Download `Curtain-2.0.6.dmg` from the [Releases](../../releases) page.
 2. Open the DMG and drag `Curtain.app` to Applications.
 3. Launch Curtain. First launch walks you through granting Accessibility, setting an optional password, and installing an optional disconnect helper.
 
