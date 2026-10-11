@@ -6,6 +6,27 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-11
+
+### Fixed
+
+- **A key press at the desk now shows the padlock screen on every monitor**, not just one: black, a
+  large padlock and "This Mac is in use remotely", with the password box on one monitor. The
+  monitors are plain black the rest of the time. (A window marked hidden from capture is still
+  captured by Screen Sharing in High Performance mode, verified by a red full-screen test window
+  appearing in a live remote view, so the padlock cannot be shown at the desk only; it shows
+  briefly in the remote view when someone touches the desk.)
+- **Faster cover on connect:** the session poll is now 1 second (was 2) and the connect grace
+  defaults to 0 (was 2), so the monitors are dark about 1-2 seconds after the connection instead of
+  4-6. Disconnect is detected in about 3 seconds (was 6).
+- **A monitor that comes online mid-session is blanked immediately**, not after the 0.3 second
+  display-change debounce.
+- **The disconnect helper no longer kills processes that are always running.**
+  `ScreenSharingSubscriber` and `RemoteManagementAgent` (MDM agent) run with no session, so every
+  disconnect reported "matched" and an unrelated agent was killed. Only `screensharingd` and
+  `ScreensharingAgent` are targeted now.
+- **"Disconnect" with the helper off now logs an error** instead of silently doing nothing.
+
 ## [2.1.0] - 2026-10-11
 
 Found from the first real remote session on macOS 27: the remote operator saw Curtain's cover

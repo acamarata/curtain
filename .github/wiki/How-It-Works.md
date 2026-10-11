@@ -48,7 +48,7 @@ Screen Sharing connects (CGSSessionScreenIsCaptured == true, local console)
     |     Sleep displays
     |     Deactivate curtain
     |
-    +-- Remote disconnects (3 consecutive misses of the capture signal, ~6 seconds)
+    +-- Remote disconnects (3 consecutive misses of the capture signal, ~3 seconds)
           Lock Mac
           Sleep displays
           Deactivate curtain
@@ -81,7 +81,7 @@ macOS 14+ High-Performance Screen Sharing on Apple Silicon streams over UDP rath
 
 Lingering `ScreenSharingAgent`, `ScreenSharingSubscriber`, or `screensharingd` processes do **not** activate the curtain on their own. Treating those as a session was an earlier false-activation bug.
 
-Disconnect is debounced: three consecutive misses of all three signals (~6 seconds) are required before declaring the session gone. Without this, a transient blip fires a false disconnect and kills a live session.
+Disconnect is debounced: three consecutive misses of all three signals (~3 seconds) are required before declaring the session gone. Without this, a transient blip fires a false disconnect and kills a live session.
 
 **Idle time** comes from the event system, using the source configured in Settings:
 
@@ -117,7 +117,7 @@ Earlier versions drew a cover window with `sharingType = .none`. On macOS 15 and
 
 macOS gives the gamma back when Curtain exits or crashes, so a dead Curtain can never leave your monitors black. It resets gamma on wake and on display changes, so Curtain re-applies it on those events and once a second.
 
-**Desk password prompt.** Press a key at the desk and a black window with the password box appears on one monitor for a few seconds. The remote operator sees that window while it is up. A correct password lifts the blackout; with the default setting the cover returns on its own after 2 minutes without desk keyboard or mouse input (Settings, Security).
+**Padlock screen.** Normally the monitors are plain black. Press a key or click at the desk and the padlock screen comes up on **every** monitor (black, a large padlock, "This Mac is in use remotely") with the password box on one of them, for a few seconds. The remote operator sees those black windows while they are up, a deliberate "someone is at the desk" signal. Screen Sharing in High Performance mode captures a window even when it is marked hidden from capture (confirmed on macOS 27 by showing a red full-screen hidden window and seeing it in the remote view), so no window can be shown at the desk only. A correct password lifts the blackout; with the default setting the cover returns on its own after 2 minutes without desk keyboard or mouse input (Settings, Security).
 
 ## DisplayLink
 

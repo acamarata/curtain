@@ -78,9 +78,25 @@ final class HostBlackout {
         refresh(force: true)
     }
 
+    /// Make several displays visible at once (the padlock screen is up on all of them).
+    func pause(_ ids: Set<CGDirectDisplayID>) {
+        let wanted = ids.intersection(targets)
+        guard !wanted.isEmpty, wanted != paused else { return }
+        paused = wanted
+        gamma.restoreAll()
+        refresh(force: true)
+    }
+
     /// Black the display out again.
     func resume(_ id: CGDirectDisplayID) {
         guard paused.remove(id) != nil else { return }
+        refresh(force: true)
+    }
+
+    /// Black every paused display out again.
+    func resumeAll() {
+        guard !paused.isEmpty else { return }
+        paused = []
         refresh(force: true)
     }
 

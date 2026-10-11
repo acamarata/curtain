@@ -73,11 +73,10 @@ final class DisconnectService: NSObject, CurtainDisconnectXPC, @unchecked Sendab
     /// release relocates one of these binaries, `killByExactPath` simply finds no
     /// matching PID for that entry and logs zero kills for it — it never falls back
     /// to a loose match.
-    private static let screenSharingSubscriberPaths: [String] = [
-        "/System/Library/PrivateFrameworks/RemoteManagement.framework/XPCServices/ScreenSharingSubscriber.xpc/Contents/MacOS/ScreenSharingSubscriber"
-    ]
-    private static let remoteManagementScreenPaths: [String] = [
-        "/System/Library/PrivateFrameworks/RemoteManagement.framework/RemoteManagementAgent",
+    /// Only the processes that carry a live session. `ScreenSharingSubscriber` and
+    /// `RemoteManagementAgent` (the MDM/declarative-management agent) run permanently even with no
+    /// session, so killing them dropped nothing and made every disconnect report "matched".
+    private static let screenSharingAgentPaths: [String] = [
         "/System/Library/CoreServices/RemoteManagement/ScreensharingAgent.bundle/Contents/MacOS/ScreensharingAgent"
     ]
 
@@ -87,9 +86,8 @@ final class DisconnectService: NSObject, CurtainDisconnectXPC, @unchecked Sendab
         // The three independent outcomes are OR-reduced via DisconnectMatcher
         // .anyMatched (CurtainHelperCore) — any one target found is sufficient.
         let outcomes = [
-            killByExactPath(Self.screenSharingSubscriberPaths, label: "ScreenSharingSubscriber"),
             runMatched(["pkill", "-x", "screensharingd"]),
-            killByExactPath(Self.remoteManagementScreenPaths, label: "RemoteManagementScreen")
+            killByExactPath(Self.screenSharingAgentPaths, label: "ScreensharingAgent")
         ]
         reply(DisconnectMatcher.anyMatched(outcomes))
     }

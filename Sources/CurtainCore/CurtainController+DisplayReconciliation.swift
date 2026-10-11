@@ -119,6 +119,8 @@ extension CurtainController {
             box = nil
             tearDownBoxWindow()
             boxHostUUID = nil
+        } else if let w = boxWindows.removeValue(forKey: uuid) {
+            w.orderOut(nil)
         }
     }
 

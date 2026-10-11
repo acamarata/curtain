@@ -101,7 +101,9 @@ public enum System {
             DispatchQueue.global(qos: .userInitiated).async { handler() }
             return
         }
-        NSLog("Curtain: disconnect requested but the remote-disconnect helper is not enabled")
+        // Visible, not just NSLog: with the helper off the "disconnect" actions (idle, desk unlock)
+        // silently did nothing, which reads as a broken privacy feature.
+        Log.error("disconnect requested but the remote-disconnect helper is not enabled")
     }
 
     // MARK: - Displays

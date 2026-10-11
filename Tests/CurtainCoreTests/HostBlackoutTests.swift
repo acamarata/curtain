@@ -78,3 +78,24 @@ final class HostBlackoutTests: XCTestCase {
         XCTAssertEqual(g.black, [1])
     }
 }
+
+extension HostBlackoutTests {
+    func testPauseSeveralThenResumeAll() {
+        let g = FakeGammaForSets()
+        let sut = HostBlackout(gamma: g)
+        sut.setTargets([1, 2, 3])
+        sut.pause([1, 2])
+        XCTAssertEqual(g.black, [3], "1 and 2 visible for the padlock screen, 3 untouched")
+        sut.refresh()
+        XCTAssertEqual(g.black, [3], "paused displays are not re-blanked by the watchdog")
+        sut.resumeAll()
+        XCTAssertEqual(g.black, [1, 2, 3])
+    }
+}
+
+private final class FakeGammaForSets: GammaControlling {
+    var black: Set<CGDirectDisplayID> = []
+    func setBlack(_ d: CGDirectDisplayID) { black.insert(d) }
+    func isBlack(_ d: CGDirectDisplayID) -> Bool { black.contains(d) }
+    func restoreAll() { black = [] }
+}

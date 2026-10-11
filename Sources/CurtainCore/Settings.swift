@@ -214,7 +214,7 @@ public enum Settings {
             Key.revealKeyCombo: "",
             Key.onUnlockAction: "disconnect",
             Key.onStartActivate: true,
-            Key.connectGraceSeconds: 2,
+            Key.connectGraceSeconds: 0,
             Key.notifyOnActivate: true,
             Key.playSoundOnActivate: false,
             Key.coverStyle: "logo",

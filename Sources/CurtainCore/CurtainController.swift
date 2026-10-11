@@ -57,9 +57,9 @@ final class CurtainController {
     /// remote Screen Sharing viewer keeps seeing the real desktop. uuid -> display ID.
     var blackedDisplays: [String: CGDirectDisplayID] = [:]
     let blackout = HostBlackout()
-    /// Full-screen opaque window that carries the password box when its host display is
-    /// gamma-blanked (no cover window exists there). Shown only while the box is up.
-    var boxWindow: CoverWindow?
+    /// The padlock screen: one opaque full-screen window per gamma-blanked display, shown only while
+    /// the password box is up (someone touched the desk). The host display's window carries the box.
+    var boxWindows: [String: CoverWindow] = [:]
     var boxHostUUID: String?
     private var wakeObservers: [NSObjectProtocol] = []
 
@@ -117,7 +117,12 @@ final class CurtainController {
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.scheduleReconcile() }
+            Task { @MainActor in
+                // Immediately (a monitor that just came online must be blanked before the desktop
+                // shows), then again after the debounce once the topology has settled.
+                self?.reconcile()
+                self?.scheduleReconcile()
+            }
         }
     }
 
@@ -307,7 +312,10 @@ final class CurtainController {
 
         let targetUUID = passwordHostUUID()
         // If the box already lives on the right host, keep it.
-        if box != nil, boxHostUUID == targetUUID { return }
+        if box != nil, boxHostUUID == targetUUID {
+            syncPadlockWindows()
+            return
+        }
         // Clear the old host flag + remove the old box.
         if let oldKey = covers.first(where: { $0.value.isPasswordHost })?.key {
             covers[oldKey]?.isPasswordHost = false
@@ -323,18 +331,35 @@ final class CurtainController {
             box = b
             covers[targetUUID]?.isPasswordHost = true
             boxHostUUID = targetUUID
-        } else if blackedDisplays[targetUUID] != nil, let screen = screen(forUUID: targetUUID) {
-            let w = makeBoxWindow(screen: screen)
-            let content = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        } else if blackedDisplays[targetUUID] != nil, let hostScreen = screen(forUUID: targetUUID) {
+            let w = makeBoxWindow(screen: hostScreen)
+            let content = NSView(frame: NSRect(origin: .zero, size: hostScreen.frame.size))
             content.wantsLayer = true
             content.layer?.backgroundColor = NSColor.black.cgColor
             w.contentView = content
             let b = makeBox(frame: content.bounds, host: w)
             b.onVisibilityChange = { [weak self] visible in self?.boxVisibilityChanged(visible: visible) }
             content.addSubview(b)
-            boxWindow = w
+            boxWindows[targetUUID] = w
             box = b
             boxHostUUID = targetUUID
+            syncPadlockWindows()
+        }
+    }
+
+    /// Every other gamma-blanked display gets a padlock-only window, so the padlock screen is on
+    /// all monitors at once. Called when the box is built and after display changes.
+    func syncPadlockWindows() {
+        guard box != nil, let host = boxHostUUID else { return }
+        for uuid in blackedDisplays.keys where uuid != host && boxWindows[uuid] == nil {
+            guard let screen = screen(forUUID: uuid) else { continue }
+            let w = makeBoxWindow(screen: screen)
+            w.contentView = PadlockView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            boxWindows[uuid] = w
+        }
+        for uuid in boxWindows.keys where blackedDisplays[uuid] == nil {
+            boxWindows[uuid]?.orderOut(nil)
+            boxWindows.removeValue(forKey: uuid)
         }
     }
 
@@ -362,23 +387,24 @@ final class CurtainController {
     }
 
     func tearDownBoxWindow() {
-        if let id = boxHostUUID.flatMap({ blackedDisplays[$0] }) { blackout.resume(id) }
-        boxWindow?.orderOut(nil)
-        boxWindow = nil
+        blackout.resumeAll()
+        for w in boxWindows.values { w.orderOut(nil) }
+        boxWindows = [:]
     }
 
-    /// The box is a full-screen opaque window on a gamma-blanked display. Order matters so the
-    /// desktop never flashes: when showing, the opaque window goes up BEFORE the display is made
-    /// visible; when hiding, the display is blanked again BEFORE the window comes down. The
-    /// remote viewer sees this black window with the box for as long as it is up.
+    /// The padlock screen is a full-screen opaque window on every gamma-blanked display. Order matters
+    /// so the desktop never flashes: when showing, the opaque windows go up BEFORE the displays are made
+    /// visible; when hiding, the displays are blanked again BEFORE the windows come down. The remote
+    /// viewer sees these black windows for as long as they are up (a deliberate "someone is at the
+    /// desk" signal, a few seconds).
     private func boxVisibilityChanged(visible: Bool) {
-        guard let w = boxWindow, let uuid = boxHostUUID, let id = blackedDisplays[uuid] else { return }
         if visible {
-            w.orderFrontRegardless()
-            blackout.pause(id)
+            syncPadlockWindows()
+            for w in boxWindows.values { w.orderFrontRegardless() }
+            blackout.pause(Set(blackedDisplays.filter { boxWindows[$0.key] != nil }.map { $0.value }))
         } else {
-            blackout.resume(id)
-            w.orderOut(nil)
+            blackout.resumeAll()
+            for w in boxWindows.values { w.orderOut(nil) }
         }
     }
 

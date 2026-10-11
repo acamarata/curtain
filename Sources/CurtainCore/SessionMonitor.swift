@@ -10,7 +10,7 @@ import Foundation
 ///      Screen Sharing (UDP, no ESTABLISHED state) and on remapped ports, and it
 ///      drops the old process / LISTEN-socket activators that lingered with no
 ///      session and kept the curtain up overnight. Disconnect is debounced
-///      (3 consecutive misses, ~6s) so a transient blip never kills a live session.
+///      (3 consecutive misses, ~3s) so a transient blip never kills a live session.
 /// Constraints: the class lives on the main thread (the Timer runs on the main
 ///      runloop and all state vars are main-thread-only). Probes block on shell
 ///      calls, so each tick runs the probes on a background queue and hops back to
@@ -54,8 +54,8 @@ public final class SessionMonitor {
     /// began, we wait for one reading below the threshold before arming.
     private var idleArmed = false
 
-    private let missLimit = 3  // ~6s at the 2s poll interval
-    private let pollInterval: TimeInterval = 2
+    private let missLimit = 3  // ~3s at the 1s poll interval
+    private let pollInterval: TimeInterval = 1
 
     private let probeQueue = DispatchQueue(label: "com.curtain.session-monitor.probe", qos: .userInitiated)
 
