@@ -70,7 +70,7 @@ Default: **on**.
 
 A debounce before covering. Curtain waits this many seconds after detecting a connection before it activates, so a brief blip or a probe that drops right away does not flash the cover. Range: 0 to 30 seconds.
 
-Default: **2 seconds**.
+Default: **0 seconds** (cover as soon as a session is detected, about 1-2 seconds after the connection). With the gamma blackout a brief blip is harmless, so no debounce is needed.
 
 ### Notify on activate
 
@@ -88,7 +88,7 @@ Default: **off**.
 
 ## Appearance
 
-What the person at the desk sees while the curtain is up.
+What the person at the desk sees while the curtain is up. Native monitors are plain black (zero gamma, so the remote view is unaffected); these settings apply to DisplayLink monitors, which keep a cover window.
 
 ### Cover style
 
@@ -183,10 +183,10 @@ Defaults: all **on**.
 
 What happens to the remote session when the correct password is entered at the desk:
 
-- **Keep session active** — the curtain drops and the remote operator stays connected.
-- **Disconnect remote** — the curtain drops and the active remote session is ended.
+- **Keep session active** — the curtain drops and the remote operator stays connected. The cover returns by itself once the desk keyboard and mouse have been idle for the "Cover returns after a desk unlock" time (Settings > Security, default 120 seconds, 0 = never).
+- **Disconnect remote** — the curtain drops and the active remote session is ended (needs the disconnect helper).
 
-Default: **disconnect remote**.
+Default: **keep session active**.
 
 ### Password box timeout
 

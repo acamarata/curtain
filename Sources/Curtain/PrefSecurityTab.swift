@@ -14,7 +14,7 @@ import CurtainCore
 /// SPORT: MASTER-PREFS
 struct PrefSecurityTab: View {
     // FIX-5: default literal aligned to registerDefaults ("keepSession" -> "disconnect")
-    @AppStorage(Settings.Key.onUnlockAction) private var onUnlockAction = "disconnect"
+    @AppStorage(Settings.Key.onUnlockAction) private var onUnlockAction = "keepSession"
     @AppStorage(Settings.Key.passwordBoxTimeoutSeconds) private var passwordBoxTimeout = 15
     @AppStorage(Settings.Key.deskReblankSeconds) private var deskReblankSeconds = 120
     @AppStorage(Settings.Key.requirePasswordToDeactivateFromMenu) private var requirePasswordToDeactivate = false

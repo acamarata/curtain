@@ -38,7 +38,7 @@ final class KVMActivityNotifierTests: XCTestCase {
     }
 
     override func tearDown() {
-        UserDefaults().removePersistentDomain(forName: suiteName)
+        TestDefaults.destroy(suiteName)
         Settings.d = originalDefaults
         super.tearDown()
     }

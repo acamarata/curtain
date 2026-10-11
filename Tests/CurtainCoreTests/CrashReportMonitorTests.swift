@@ -48,7 +48,7 @@ final class CrashReportMonitorTests: XCTestCase {
     }
 
     override func tearDown() {
-        UserDefaults().removePersistentDomain(forName: suiteName)
+        TestDefaults.destroy(suiteName)
         Settings.d = originalDefaults
         CrashReportMonitor.diagnosticReportsDirectory = originalDirectory
         CrashReportMonitor.readLastHeartbeatTimestamp = originalReadHeartbeat

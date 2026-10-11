@@ -40,7 +40,7 @@ final class SessionCoordinatorTests: XCTestCase {
     }
 
     override func tearDown() {
-        UserDefaults().removePersistentDomain(forName: suiteName)
+        TestDefaults.destroy(suiteName)
         Settings.d = originalDefaults
         super.tearDown()
     }
@@ -328,7 +328,7 @@ final class SessionCoordinatorEndLockTests: XCTestCase {
     override func tearDown() {
         Settings.d.removePersistentDomain(forName: suiteName)
         Settings.d = originalDefaults
-        UserDefaults.standard.removePersistentDomain(forName: suiteName)
+        TestDefaults.destroy(suiteName)
         super.tearDown()
     }
 
@@ -427,7 +427,7 @@ final class SessionCoordinatorDeskTests: XCTestCase {
     override func tearDown() {
         Settings.d.removePersistentDomain(forName: suiteName)
         Settings.d = originalDefaults
-        UserDefaults.standard.removePersistentDomain(forName: suiteName)
+        TestDefaults.destroy(suiteName)
         super.tearDown()
     }
 

@@ -64,6 +64,7 @@ public final class SessionCoordinator {
     /// the connect grace, desk unlock mid-session): the end lock keys off "a session
     /// happened", not off "the cover happened to be up".
     private var sessionInProgress = false
+    private var tickCount = 0
 
     /// Set when the desk password dismissed the cover while a remote session is still connected,
     /// so the cover can come back by itself after the desk goes quiet (`Settings.deskReblankSeconds`).
@@ -122,6 +123,11 @@ public final class SessionCoordinator {
                 self?.curtain.tick()
                 self?.recheckAccessibilityIfActive()
                 self?.recheckDeskReblank()
+                self?.tickCount += 1
+                if let self, self.tickCount % 5 == 0, Settings.disconnectFeatureEnabled {
+                    // Picks up the helper being approved in System Settings without a relaunch.
+                    DisconnectClient.shared.syncWithSettings()
+                }
             }
         }
 

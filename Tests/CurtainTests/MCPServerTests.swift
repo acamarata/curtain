@@ -69,7 +69,7 @@ final class MCPServerTests: XCTestCase {
         server = nil
         SessionMonitor.heartbeatDirectoryOverride = nil
         try? FileManager.default.removeItem(at: tempDir)
-        UserDefaults().removePersistentDomain(forName: suiteName)
+        TestDefaults.destroy(suiteName)
         Settings.d = originalDefaults
         super.tearDown()
     }

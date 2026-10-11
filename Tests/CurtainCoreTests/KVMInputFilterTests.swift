@@ -105,7 +105,7 @@ final class KVMInputFilterTests: XCTestCase {
         Settings.d = testDefaults
         defer {
             Settings.d = original
-            testDefaults.removePersistentDomain(forName: suiteName)
+            TestDefaults.destroy(suiteName)
         }
 
         XCTAssertNil(Settings.kvmDeviceVendorID, "fresh suite must read as unregistered")
@@ -126,7 +126,7 @@ final class KVMInputFilterTests: XCTestCase {
         Settings.d = testDefaults
         defer {
             Settings.d = original
-            testDefaults.removePersistentDomain(forName: suiteName)
+            TestDefaults.destroy(suiteName)
         }
 
         Settings.kvmDeviceVendorID = 0x1234
@@ -146,7 +146,7 @@ final class KVMInputFilterTests: XCTestCase {
         Settings.d = testDefaults
         defer {
             Settings.d = original
-            testDefaults.removePersistentDomain(forName: suiteName)
+            TestDefaults.destroy(suiteName)
         }
 
         Settings.kvmDeviceVendorID = 0x1234

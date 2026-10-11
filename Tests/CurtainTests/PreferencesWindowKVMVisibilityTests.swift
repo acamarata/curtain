@@ -39,7 +39,7 @@ final class PreferencesWindowKVMVisibilityTests: XCTestCase {
 
     override func tearDown() {
         Settings.d = originalDefaults
-        UserDefaults().removePersistentDomain(forName: suiteName)
+        TestDefaults.destroy(suiteName)
         super.tearDown()
     }
 

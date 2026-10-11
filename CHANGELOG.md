@@ -6,6 +6,31 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-11
+
+Completes the behavior described by the owner: remote session fully normal, desk dark with a padlock
+screen on touch, native lock then uncover whenever a session ends or goes idle.
+
+### Changed
+
+- **A desk unlock keeps the remote session working by default** (`onUnlock.action` = keepSession,
+  was disconnect). The cover returns by itself after the desk goes idle, so the unlock is a pause,
+  not an end. "Disconnect remote" is still a choice (needs the disconnect helper).
+- Connect grace default in Settings > General now matches the registered default (0).
+
+### Added
+
+- **Disconnect helper approval is guided.** Turning the helper on now sends a notification and opens
+  System Settings > Login Items & Extensions when macOS needs the one-time approval, and Curtain
+  picks the approval up within 5 seconds, without a relaunch.
+
+### Fixed
+
+- `swift test` leaves far fewer preference files in `~/Library/Preferences`: suites are removed with
+  their plist, with a sweep at the end of the run. cfprefsd can still re-create a few after the
+  process exits, so a handful may remain.
+- Docs: lifecycle, unlock and appearance pages describe the gamma blackout and padlock screen.
+
 ## [2.2.1] - 2026-10-11
 
 ### Fixed

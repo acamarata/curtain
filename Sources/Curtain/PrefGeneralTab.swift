@@ -15,7 +15,7 @@ struct PrefGeneralTab: View {
     @AppStorage(Settings.Key.launchAtLogin) private var launchAtLogin = true
     @AppStorage(Settings.Key.showInMenuBar) private var showInMenuBar = true
     @AppStorage(Settings.Key.onStartActivate) private var onStartActivate = true
-    @AppStorage(Settings.Key.connectGraceSeconds) private var connectGraceSeconds = 2
+    @AppStorage(Settings.Key.connectGraceSeconds) private var connectGraceSeconds = 0
     @AppStorage(Settings.Key.notifyOnActivate) private var notifyOnActivate = true
     @AppStorage(Settings.Key.playSoundOnActivate) private var playSoundOnActivate = false
 

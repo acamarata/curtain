@@ -212,7 +212,9 @@ public enum Settings {
             Key.showInMenuBar: true,
             Key.revealTrigger: "anyKey",
             Key.revealKeyCombo: "",
-            Key.onUnlockAction: "disconnect",
+            // A desk unlock keeps the remote session working; the cover returns by itself after the desk
+            // goes quiet (deskReblank.seconds). "disconnect" remains available in Settings > Security.
+            Key.onUnlockAction: "keepSession",
             Key.onStartActivate: true,
             Key.connectGraceSeconds: 0,
             Key.notifyOnActivate: true,

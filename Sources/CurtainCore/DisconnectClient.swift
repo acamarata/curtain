@@ -75,7 +75,17 @@ public final class DisconnectClient {
                     "Curtain: SMAppService daemon register failed (%@) — using sudoers fallback",
                     String(describing: error))
             }
-            if !daemonOK {
+            if !daemonOK, daemon.status == .requiresApproval {
+                // The helper is registered but macOS needs the user to switch it on once. Say so and
+                // take them to the exact screen instead of failing silently.
+                Notifier.post(
+                    title: "Curtain",
+                    body:
+                        "Approve Curtain's disconnect helper in System Settings > General > Login Items & Extensions.",
+                    throttleKey: "disconnect-helper-approval",
+                    throttleSeconds: 30)
+                SMAppService.openSystemSettingsLoginItems()
+            } else if !daemonOK {
                 // Sudoers fallback is dev-only: reachable solely on an ad-hoc/unsigned
                 // build. A properly-signed build that still couldn't register the daemon
                 // must NOT touch sudoers — report instead.

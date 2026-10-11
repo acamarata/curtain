@@ -54,7 +54,7 @@ final class SettingsPasswordTests: XCTestCase {
         Settings.deletePasswordMaterialForTesting()
         Settings.keychainService = originalKeychainService
         Settings.d = originalDefaults
-        testDefaults.removePersistentDomain(forName: suiteName)
+        TestDefaults.destroy(suiteName)
         testDefaults = nil
         super.tearDown()
     }

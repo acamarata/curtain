@@ -25,33 +25,30 @@ Physical key presses are not simply discarded. When a physical `keyDown` arrives
 ```
 Screen Sharing connects (CGSSessionScreenIsCaptured == true, local console)
   |
-  +-- Cover windows appear on every physical display
-  |     Configurable: solid, message, blur, lock logo, Curtain logo, or aerial video,
-  |     with an optional clock (default: lock logo)
+  +-- Every physical monitor goes black (zero gamma; the remote view is unaffected)
+  |     DisplayLink monitors get a cover window instead (configurable style)
   +-- Input tap activates (physical input blocked, remote input passes)
   +-- IOKit display-sleep assertion held (displays stay on for the remote view)
   |
   While connected:
     |
-    +-- Reveal trigger at the desk (any key, or a user-defined combo)
-    |     Password box appears
-    |     Correct password: curtain drops; remote stays connected or disconnects per On Curtain Unlock
+    +-- A key press or click at the desk
+    |     The padlock screen comes up on every monitor, password box on one
+    |     Correct password: blackout lifts; remote stays connected (default) or disconnects per On Curtain Unlock;
+    |       with the default "keep", the cover returns by itself after the desk is idle (default 2 min)
     |     Wrong password: box clears, try again
-    |     Esc, or no key for the box timeout: box hides
+    |     Esc, or no key for the box timeout: padlock screen hides, monitors black again
     |
     +-- Emergency hotkey (Control + Option + Command + U)
     |     Force-deactivate the curtain, even without Accessibility
     |
     +-- No physical input for N minutes (idle timeout, default 30 min)
     |     Disconnect remote (via the helper daemon, if installed)
-    |     Lock Mac (SACLockScreenImmediate)
-    |     Sleep displays
-    |     Deactivate curtain
+    |     Lock Mac (SACLockScreenImmediate), then deactivate curtain, then sleep displays
+    |     (runs even if no cover is up)
     |
-    +-- Remote disconnects (3 consecutive misses of the capture signal, ~3 seconds)
-          Lock Mac
-          Sleep displays
-          Deactivate curtain
+    +-- Remote disconnects, for any reason (user ends it, network drops) (3 consecutive misses of the capture signal, ~3 seconds)
+          Lock Mac, then deactivate curtain, then sleep displays
 ```
 
 If the cover never came up (for example Accessibility is not granted), the disconnect still locks the Mac and sleeps the displays; the "Also lock when the curtain never came up" setting controls this.
