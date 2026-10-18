@@ -127,6 +127,7 @@ jobs:
           path: |
             dist/Curtain-*.dmg
             dist/Curtain-*.dmg.sha256
+          retention-days: 3
 
       # Best-effort: the runner is ephemeral, but an explicit delete keeps the
       # identity out of any later step in the same job.
