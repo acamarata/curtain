@@ -3,11 +3,19 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     # Needs a Swift 6 toolchain: the codebase relies on region-based isolation
     # (weak-self captures inside @MainActor Tasks) that Swift 5.10 rejects.
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache SPM build artifacts
@@ -29,6 +37,7 @@ jobs:
     # 120-col) so this gate reflects a real style baseline rather than
     # swift-format's 2-space/100-col defaults.
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Lint (swift-format)
@@ -41,6 +50,7 @@ jobs:
     # on a coverage number. Live Codecov upload is a fast-follow once
     # CODECOV_TOKEN_CURTAIN exists (out of scope here).
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Cache SPM build artifacts
