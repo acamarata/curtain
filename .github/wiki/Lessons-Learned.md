@@ -50,6 +50,8 @@ The working approach:
 
 **Debounce disconnect:** a single missed netstat poll is not a real disconnect. Without debouncing, a transient network blip fires a false disconnect that kills a live session. The fix is to require three consecutive misses (~6 seconds at a 2-second poll interval) before treating it as a real disconnect.
 
+**Debounce connect, not just disconnect (2026-10-28):** a LAN watchdog that opens and drops a TCP connection to port 5900 every minute produced one ESTABLISHED poll. Curtain armed the cover (all monitors black), then the debounced "session ended" ran the lock, so the Mac locked and the displays went dark at random. Curtain's own log showed `captured=false tcpEstab=true` followed by "session ended (debounced)" three seconds later. The fix requires a network-only signal to hold for 3 polls before a session counts.
+
 ## Probe tool paths must be verified on-device
 
 `netstat` on macOS lives at `/usr/sbin/netstat`. There is no `/usr/bin/netstat`. A probe subprocess launched with the wrong absolute path fails silently: the process exits immediately with "no such file", the parser receives empty output, the probe returns zero results, and the detector never fires. No error surfaces anywhere unless the launch failure is logged explicitly.

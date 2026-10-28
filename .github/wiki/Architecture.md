@@ -74,6 +74,8 @@ Probe helpers (`/usr/sbin/netstat`, not `/usr/bin/netstat` — the latter does n
 
 The combined signal is debounced over 3 consecutive misses (~6 seconds) before declaring the session gone.
 
+Connect is debounced as well (`connectLimit` in `SessionMonitor`): a network-only signal must hold for 3 consecutive polls before `onConnect` fires. The capture flag (`CGSSessionScreenIsCaptured`) bypasses the debounce. `apply(signals:idle:)` is internal so `SessionMonitorConnectDebounceTests` can drive it directly.
+
 Idle time comes from the event system. The source is configurable in Settings (see [Settings — On Session Idle](Settings#on-session-idle)):
 
 ```swift

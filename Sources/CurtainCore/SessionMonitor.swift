@@ -55,6 +55,13 @@ public final class SessionMonitor {
     private var idleArmed = false
 
     private let missLimit = 3  // ~3s at the 1s poll interval
+
+    /// Consecutive network-only ticks (no capture flag) needed before a session counts.
+    /// A bare TCP connect-and-drop to 5900 (a LAN port probe or watchdog) can sit in
+    /// ESTABLISHED for one tick; without this it armed the cover and then locked the Mac
+    /// when the "session" ended. The capture flag still connects on the first tick.
+    private let connectLimit = 3  // ~3s at the 1s poll interval
+    private var hitCount = 0
     private let pollInterval: TimeInterval = 1
 
     private let probeQueue = DispatchQueue(label: "com.curtain.session-monitor.probe", qos: .userInitiated)
@@ -87,7 +94,7 @@ public final class SessionMonitor {
         }
     }
 
-    private func apply(signals: CaptureProbe.CaptureSignals, idle: Int) {
+    func apply(signals: CaptureProbe.CaptureSignals, idle: Int) {
         defer { probing = false }
 
         // Log raw signal changes (transitions only) so a live test shows exactly
@@ -101,7 +108,8 @@ public final class SessionMonitor {
 
         if signals.any {
             missCount = 0
-            if !connected {
+            hitCount += 1
+            if !connected && (signals.captured || hitCount >= connectLimit) {
                 connected = true
                 idleFired = false
                 idleArmed = false
@@ -112,12 +120,15 @@ public final class SessionMonitor {
                     episode: episodeID)
                 onConnect?(episodeID)
             }
-            evaluateIdle(idle)
-        } else if connected {
+            if connected { evaluateIdle(idle) }
+        } else if !connected {
+            hitCount = 0
+        } else {
             missCount += 1
             if missCount >= missLimit {
                 connected = false
                 missCount = 0
+                hitCount = 0
                 Log.event("session ended (debounced)", episode: currentEpisodeID)
                 onDisconnect?()
                 currentEpisodeID = nil

@@ -78,6 +78,8 @@ macOS 14+ High-Performance Screen Sharing on Apple Silicon streams over UDP rath
 
 Lingering `ScreenSharingAgent`, `ScreenSharingSubscriber`, or `screensharingd` processes do **not** activate the curtain on their own. Treating those as a session was an earlier false-activation bug.
 
+Connect is debounced too. A session seen only through the network signals (`tcpEstab` / `udpPeered`, with `CGSSessionScreenIsCaptured` false) must persist for three consecutive polls (~3 seconds) before it counts. A LAN port probe or watchdog that opens and closes a connection to port 5900 in under a second never arms the curtain and never runs the end actions (lock, display sleep). When `CGSSessionScreenIsCaptured` is true the session connects on the first poll.
+
 Disconnect is debounced: three consecutive misses of all three signals (~3 seconds) are required before declaring the session gone. Without this, a transient blip fires a false disconnect and kills a live session.
 
 **Idle time** comes from the event system, using the source configured in Settings:

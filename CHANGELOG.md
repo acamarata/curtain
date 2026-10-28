@@ -6,6 +6,15 @@ All notable changes to Curtain are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A quick connect-and-drop on port 5900 no longer locks the Mac.** A LAN port probe (a watchdog or
+  scanner) that opened and closed a connection within a second counted as one session poll: Curtain
+  covered every monitor, then ran the end actions (lock, display sleep) three seconds later. A
+  network-only signal (`tcpEstab` / `udpPeered`) now has to hold for three consecutive polls
+  (about 3 seconds) before a session counts. `CGSSessionScreenIsCaptured` still connects on the first
+  poll. Covered by `SessionMonitorConnectDebounceTests`.
+
 ## [2.3.0] - 2026-10-11
 
 Completes the behavior described by the owner: remote session fully normal, desk dark with a padlock
