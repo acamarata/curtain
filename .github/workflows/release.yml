@@ -5,12 +5,17 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   release:
     # Needs a Swift 6 toolchain, same requirement as build.yml. Notarytool
     # submissions can take several minutes; GitHub's default 360-minute job
     # timeout is more than sufficient and is intentionally left untightened.
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
